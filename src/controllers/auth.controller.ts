@@ -371,6 +371,53 @@ export class AuthController {
 
   /**
    * @swagger
+   * /api/v1/auth/avatar:
+   *   post:
+   *     summary: Upload and update user avatar
+   *     tags: [Auth]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         multipart/form-data:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               avatar:
+   *                 type: string
+   *                 format: binary
+   *     responses:
+   *       200:
+   *         description: Avatar updated successfully
+   *       401:
+   *         description: Not authenticated
+   *       400:
+   *         description: Bad request (no file)
+   */
+  static async uploadAvatar(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.file) {
+        throw new BadRequestError('No image file provided');
+      }
+
+      const user = await User.findById(req.userId);
+      if (!user) {
+        throw new UnauthorizedError('User not found');
+      }
+
+      // Cloudinary returns the secure URL in req.file.path
+      user.avatarUrl = req.file.path;
+      await user.save();
+
+      ApiResponseHelper.success(res, user.toPublicJSON(), 'Avatar updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
    * /api/v1/auth/change-password:
    *   post:
    *     summary: Change password

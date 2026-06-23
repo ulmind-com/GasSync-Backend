@@ -31,6 +31,22 @@ const storage = new CloudinaryStorage({
   },
 });
 
+// Configure Multer to use Cloudinary for Avatars
+const avatarStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: async (req, file) => {
+    // Generate a unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const filename = `avatar-${uniqueSuffix}`;
+
+    return {
+      folder: 'gassync/avatars',
+      format: 'png',
+      public_id: filename,
+    };
+  },
+});
+
 // File filter for images only
 const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   if (config.upload.allowedMimeTypes.includes(file.mimetype)) {
@@ -40,7 +56,7 @@ const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.
   }
 };
 
-// Initialize multer
+// Initialize multer for bills
 export const upload = multer({
   storage,
   limits: {
@@ -49,5 +65,17 @@ export const upload = multer({
   fileFilter,
 });
 
+// Initialize multer for avatars
+export const uploadAvatar = multer({
+  storage: avatarStorage,
+  limits: {
+    fileSize: config.upload.maxFileSize,
+  },
+  fileFilter,
+});
+
 // Single bill image upload
 export const uploadBillImage = upload.single('billImage');
+
+// Single avatar image upload
+export const uploadAvatarImage = uploadAvatar.single('avatar');

@@ -7,6 +7,7 @@ import { body } from 'express-validator';
 import { AuthController } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth';
 import { validate } from '../middleware/validate';
+import { uploadAvatarImage } from '../middleware/upload';
 
 const router = Router();
 
@@ -55,6 +56,7 @@ router.post('/refresh', AuthController.refreshToken);
 router.post('/logout', authenticate, AuthController.logout);
 router.get('/me', authenticate, AuthController.getMe);
 router.put('/me', authenticate, AuthController.updateMe);
+router.post('/avatar', authenticate, uploadAvatarImage, AuthController.uploadAvatar);
 router.post('/change-password', authenticate, validate(changePasswordValidation), AuthController.changePassword);
 
 export default router;
