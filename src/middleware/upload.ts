@@ -3,46 +3,46 @@
 // ============================================================
 
 import multer from 'multer';
-import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import config from '../config';
-import { BadRequestError } from '../utils/errors';
+import { AppError } from '../utils/errors';
 
-// Memory storage (for processing before uploading to cloud/local)
-const storage = multer.memoryStorage();
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: config.cloudinary.cloudName,
+  api_key: config.cloudinary.apiKey,
+  api_secret: config.cloudinary.apiSecret,
+});
 
-// Disk storage (for local development)
-const diskStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, path.join(process.cwd(), 'uploads', 'bills'));
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const filename = `${uuidv4()}${ext}`;
-    cb(null, filename);
+// Configure Multer to use Cloudinary
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: async (req, file) => {
+    // Generate a unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const filename = `bill-${uniqueSuffix}`;
+
+    return {
+      folder: 'gassync/bills',
+      format: 'png', // Force png, or can use original format
+      public_id: filename,
+    };
   },
 });
 
-// File filter
-const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+// File filter for images only
+const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   if (config.upload.allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new BadRequestError(`File type ${file.mimetype} is not allowed. Allowed: ${config.upload.allowedMimeTypes.join(', ')}`));
+    cb(new AppError('Invalid file type. Only JPG, PNG and WEBP are allowed', 400));
   }
 };
 
-// Export multer instances
-export const uploadMemory = multer({
-  storage: storage,
-  limits: {
-    fileSize: config.upload.maxFileSize,
-  },
-  fileFilter,
-});
-
-export const uploadDisk = multer({
-  storage: diskStorage,
+// Initialize multer
+export const upload = multer({
+  storage,
   limits: {
     fileSize: config.upload.maxFileSize,
   },
@@ -50,4 +50,4 @@ export const uploadDisk = multer({
 });
 
 // Single bill image upload
-export const uploadBillImage = config.nodeEnv === 'production' ? uploadMemory.single('billImage') : uploadDisk.single('billImage');
+export const uploadBillImage = upload.single('billImage');

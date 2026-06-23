@@ -22,6 +22,11 @@ interface Config {
   cors: {
     origin: string[];
   };
+  cloudinary: {
+    cloudName: string;
+    apiKey: string;
+    apiSecret: string;
+  };
   rateLimit: {
     windowMs: number;
     max: number;
@@ -33,7 +38,7 @@ interface Config {
 }
 
 const config: Config = {
-  port: parseInt(process.env.PORT || '5000', 10),
+  port: parseInt(process.env.PORT || '4000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   mongodbUri: process.env.MONGODB_URI || '',
   jwtSecret: process.env.JWT_SECRET || 'gassync-super-secret-key-change-in-production',
@@ -48,6 +53,11 @@ const config: Config = {
   },
   cors: {
     origin: (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:19006').split(','),
+  },
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
   },
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 mins
