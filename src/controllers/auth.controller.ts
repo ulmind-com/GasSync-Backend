@@ -17,13 +17,13 @@ const generateTokens = (userId: string, email: string, role: string) => {
   const accessToken = jwt.sign(
     { userId, email, role },
     config.jwtSecret,
-    { expiresIn: config.jwtExpiresIn }
+    { expiresIn: config.jwtExpiresIn as any }
   );
 
   const refreshToken = jwt.sign(
     { userId, email, role },
     config.jwtRefreshSecret,
-    { expiresIn: config.jwtRefreshExpiresIn }
+    { expiresIn: config.jwtRefreshExpiresIn as any }
   );
 
   return { accessToken, refreshToken };

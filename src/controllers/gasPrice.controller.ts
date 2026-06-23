@@ -207,7 +207,7 @@ export class GasPriceController {
         region,
         fuelType,
         recordedDate: { $gte: startDate },
-      })
+      } as any)
         .sort({ recordedDate: 1 })
         .lean();
 
@@ -276,7 +276,7 @@ export class GasPriceController {
           const latestHistory = await PriceHistory.findOne({
             region: state,
             fuelType,
-          })
+          } as any)
             .sort({ recordedDate: -1 })
             .lean();
 
@@ -404,7 +404,7 @@ export class GasPriceController {
         region: 'US',
         fuelType: fuelType || 'regular',
         recordedDate: { $gte: weekAgo },
-      })
+      } as any)
         .sort({ recordedDate: 1 })
         .lean();
 
