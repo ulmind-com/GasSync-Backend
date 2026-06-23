@@ -21,9 +21,35 @@ export interface IUser extends Document {
   lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  favorites: Array<{
+    id: string;
+    name: string;
+    lat: number;
+    lon: number;
+    address: string;
+    rating: number;
+    totalRatings: number;
+    isOpen: boolean | null;
+    photoRef: string | null;
+  }>;
   comparePassword(candidatePassword: string): Promise<boolean>;
   toPublicJSON(): Record<string, any>;
 }
+
+const favoriteSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    lat: { type: Number, required: true },
+    lon: { type: Number, required: true },
+    address: { type: String, default: '' },
+    rating: { type: Number, default: 0 },
+    totalRatings: { type: Number, default: 0 },
+    isOpen: { type: Boolean, default: null },
+    photoRef: { type: String, default: null },
+  },
+  { _id: false }
+);
 
 const userSchema = new Schema<IUser>(
   {
@@ -93,6 +119,10 @@ const userSchema = new Schema<IUser>(
       type: Date,
       default: null,
     },
+    favorites: {
+      type: [favoriteSchema],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -127,6 +157,7 @@ userSchema.methods.toPublicJSON = function (): Record<string, any> {
     role: this.role,
     isEmailVerified: this.isEmailVerified,
     lastLoginAt: this.lastLoginAt,
+    favorites: this.favorites || [],
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

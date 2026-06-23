@@ -469,4 +469,43 @@ export class AuthController {
       next(error);
     }
   }
+  static async toggleFavorite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const station = req.body;
+      if (!station || !station.id) {
+        throw new BadRequestError('Station object with id is required');
+      }
+
+      const user = await User.findById(req.userId);
+      if (!user) {
+        throw new UnauthorizedError('User not found');
+      }
+
+      const existingIndex = user.favorites.findIndex(f => f.id === station.id);
+      
+      if (existingIndex >= 0) {
+        // Remove from favorites
+        user.favorites.splice(existingIndex, 1);
+      } else {
+        // Add to favorites
+        user.favorites.push({
+          id: station.id,
+          name: station.name,
+          lat: station.lat,
+          lon: station.lon,
+          address: station.address || '',
+          rating: station.rating || 0,
+          totalRatings: station.totalRatings || 0,
+          isOpen: station.isOpen ?? null,
+          photoRef: station.photoRef || null,
+        });
+      }
+
+      await user.save();
+      
+      ApiResponseHelper.success(res, user.favorites, 'Favorites updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
