@@ -175,10 +175,8 @@ async function startServer(): Promise<void> {
     const db = Database.getInstance();
     await db.connect();
 
-    // Seed database in development
-    if (config.nodeEnv === 'development') {
-      await seedDatabase();
-    }
+    // Seed database (runs once — skips if data already exists)
+    await seedDatabase();
 
     // Start listening
     app.listen(config.port, () => {
