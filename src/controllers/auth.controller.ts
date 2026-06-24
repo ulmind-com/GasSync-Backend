@@ -11,6 +11,9 @@ import { BadRequestError, UnauthorizedError, ConflictError } from '../utils/erro
 import { logger } from '../utils/logger';
 import { OTP } from '../models/OTP';
 import { sendOTP } from '../utils/mailer';
+import { OAuth2Client } from 'google-auth-library';
+
+const googleClient = new OAuth2Client();
 
 /**
  * Generate JWT tokens
@@ -251,6 +254,76 @@ export class AuthController {
       }, 'Login successful');
     } catch (error) {
       next(error);
+    }
+  }
+
+  static async googleLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { idToken } = req.body;
+      if (!idToken) throw new BadRequestError('idToken is required');
+
+      // Verify the Google ID Token
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: [
+          process.env.GOOGLE_WEB_CLIENT_ID || '',
+          process.env.GOOGLE_IOS_CLIENT_ID || '',
+          process.env.GOOGLE_ANDROID_CLIENT_ID || '',
+        ].filter(Boolean),
+      });
+
+      const payload = ticket.getPayload();
+      if (!payload || !payload.email) {
+        throw new UnauthorizedError('Invalid Google token');
+      }
+
+      const email = payload.email.toLowerCase();
+      const displayName = payload.name || 'Google User';
+      const avatarUrl = payload.picture;
+
+      // Find if user already exists
+      let user = await User.findOne({ email });
+
+      if (!user) {
+        // Create new user (using a random secure password for oauth users)
+        const randomPassword = require('crypto').randomBytes(16).toString('hex') + 'A1!';
+        user = new User({
+          email,
+          password: randomPassword,
+          displayName,
+          avatarUrl,
+        });
+        await user.save();
+        logger.info(`New user registered via Google: ${email}`);
+      } else {
+        // Optionally update avatar if they didn't have one
+        if (!user.avatarUrl && avatarUrl) {
+          user.avatarUrl = avatarUrl;
+          await user.save();
+        }
+        logger.info(`Existing user logged in via Google: ${email}`);
+      }
+
+      // Generate tokens
+      const { accessToken, refreshToken } = generateTokens(
+        user._id.toString(),
+        user.email,
+        user.role
+      );
+
+      // Update refresh token and last login
+      user.refreshToken = refreshToken;
+      user.lastLoginAt = new Date();
+      await user.save();
+
+      ApiResponseHelper.success(res, {
+        user: user.toPublicJSON(),
+        accessToken,
+        refreshToken,
+      }, 'Google login successful');
+    } catch (error) {
+      logger.error('Google Auth Error:', error);
+      next(new UnauthorizedError('Google authentication failed'));
     }
   }
 
