@@ -64,6 +64,7 @@ export class BillController {
       const bill = new Bill({
         user: req.userId,
         imageUrl,
+        googlePlaceId: req.body.googlePlaceId || null,
         stationName: req.body.stationName || null,
         fuelType: req.body.fuelType || null,
         notes: req.body.notes || null,

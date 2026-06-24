@@ -57,6 +57,11 @@ const billSchema = new Schema<IBill>(
       ref: 'GasStation',
       default: null,
     },
+    googlePlaceId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     imageUrl: {
       type: String,
       required: [true, 'Bill image URL is required'],

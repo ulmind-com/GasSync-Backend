@@ -26,6 +26,7 @@ router.get('/latest', GasPriceController.getLatestPrices);
 router.get('/history', GasPriceController.getPriceHistory);
 router.get('/compare', GasPriceController.comparePrices);
 router.get('/national-average', GasPriceController.getNationalAverage);
+router.get('/by-place/:googlePlaceId', GasPriceController.getStationPricesByPlaceId);
 router.get('/station/:stationId', GasPriceController.getStationPrices);
 
 // Protected routes
