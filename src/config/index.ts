@@ -42,9 +42,9 @@ const config: Config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   mongodbUri: process.env.MONGODB_URI || '',
   jwtSecret: process.env.JWT_SECRET || 'gassync-super-secret-key-change-in-production',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '180d',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'gassync-refresh-secret-key-change-in-production',
-  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '365d',
   gasApi: {
     eiaApiKey: process.env.EIA_API_KEY || '',
     eiaBaseUrl: 'https://api.eia.gov/v2',
