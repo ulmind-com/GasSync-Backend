@@ -61,22 +61,31 @@ export class BillController {
         ? `/uploads/bills/${req.file.filename}`
         : `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
 
+      // Parse user-submitted price data (from form fields)
+      const pricePerGallon = req.body.pricePerGallon ? parseFloat(req.body.pricePerGallon) : null;
+      const totalAmount = req.body.totalAmount ? parseFloat(req.body.totalAmount) : null;
+      const totalGallons = req.body.totalGallons ? parseFloat(req.body.totalGallons) : null;
+      const fuelType = req.body.fuelType || null;
+      const hasPrice = pricePerGallon && pricePerGallon > 0;
+
       const bill = new Bill({
         user: req.userId,
         imageUrl,
         googlePlaceId: req.body.googlePlaceId || null,
         stationName: req.body.stationName || null,
-        fuelType: req.body.fuelType || null,
+        fuelType,
+        pricePerGallon,
+        totalAmount,
+        totalGallons,
+        billDate: new Date(),
         notes: req.body.notes || null,
-        status: 'processing',
+        status: hasPrice ? 'extracted' : 'processing',
       });
 
       await bill.save();
 
-      logger.info(`Bill uploaded by user ${req.userId}: ${bill._id}`);
+      logger.info(`Bill uploaded by user ${req.userId}: ${bill._id} (status: ${bill.status})`);
 
-      // TODO: Trigger async OCR processing here
-      // For now, mark as 'processing' — OCR will be handled by a background job or separate endpoint
 
       ApiResponseHelper.created(res, bill, 'Bill uploaded successfully. Processing will begin shortly.');
     } catch (error) {
