@@ -197,7 +197,7 @@ export async function seedDatabase(): Promise<void> {
   const historyEntries: any[] = [];
   const regions = ['US', 'TX', 'CA', 'NY', 'IL', 'FL'];
   const nationalBasePrices: Record<string, number> = {
-    regular: 3.45, midgrade: 3.79, premium: 4.15, diesel: 3.65,
+    regular: 5.80, midgrade: 6.15, premium: 6.50, diesel: 6.70,
   };
 
   for (const region of regions) {
