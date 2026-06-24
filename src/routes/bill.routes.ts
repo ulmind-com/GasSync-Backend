@@ -18,7 +18,7 @@ router.use(authenticate);
 const updateBillValidation = [
   body('fuelType')
     .optional()
-    .isIn(['regular', 'midgrade', 'premium', 'diesel'])
+    .isIn(['regular', 'midgrade', 'premium', 'diesel', 'e85', 'unl88'])
     .withMessage('Invalid fuel type'),
   body('pricePerGallon')
     .optional()

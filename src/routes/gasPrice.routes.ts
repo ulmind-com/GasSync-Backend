@@ -14,7 +14,7 @@ const router = Router();
 const reportPriceValidation = [
   body('stationId').isMongoId().withMessage('Valid station ID is required'),
   body('fuelType')
-    .isIn(['regular', 'midgrade', 'premium', 'diesel'])
+    .isIn(['regular', 'midgrade', 'premium', 'diesel', 'e85', 'unl88'])
     .withMessage('Invalid fuel type'),
   body('price')
     .isFloat({ min: 0.01, max: 20 })
