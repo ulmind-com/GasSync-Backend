@@ -680,7 +680,7 @@ function extractBillData(rawText: string): {
   pricePerGallon?: number;
   totalGallons?: number;
   totalAmount?: number;
-  fuelType?: 'regular' | 'midgrade' | 'premium' | 'diesel';
+  fuelType?: 'regular' | 'midgrade' | 'premium' | 'diesel' | 'e85' | 'unl88';
   stationName?: string;
   billDate?: Date;
   paymentMethod?: string;
@@ -778,7 +778,11 @@ function extractBillData(rawText: string): {
   }
 
   // 5. Extract Fuel Type
-  if (/PREMIUM|SUPER|V[- ]?POWER|93|SUPREME/i.test(text)) {
+  if (/E85|FLEX\s*FUEL|ETHANOL/i.test(text)) {
+    result.fuelType = 'e85';
+  } else if (/UNL\s*88|88\s*UNL/i.test(text)) {
+    result.fuelType = 'unl88';
+  } else if (/PREMIUM|SUPER|V[- ]?POWER|93|SUPREME/i.test(text)) {
     result.fuelType = 'premium';
   } else if (/MID\s*GRADE|PLUS|MID|89/i.test(text)) {
     result.fuelType = 'midgrade';
