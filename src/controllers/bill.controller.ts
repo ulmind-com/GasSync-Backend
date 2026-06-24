@@ -618,43 +618,67 @@ function extractBillData(rawText: string): {
   const text = rawText.toUpperCase();
   const result: any = {};
 
-  // Extract price per gallon (e.g., "$3.459/GAL", "PRICE/GAL 3.459", "3.459 $/G")
+  // 1. Extract Price per Gallon
   const pricePatterns = [
+    // Standard formats
     /\$?\s*(\d+\.\d{2,3})\s*\/?\s*GAL/i,
     /PRICE\s*\/?\s*GAL\w*\s*:?\s*\$?\s*(\d+\.\d{2,3})/i,
+    /PRICE\s*\/?\s*G\s*:?\s*\$?\s*(\d+\.\d{2,3})/i,
     /UNIT\s*PRICE\s*:?\s*\$?\s*(\d+\.\d{2,3})/i,
-    /(\d+\.\d{3})\s*(?:USD|DOLLARS?)?\s*(?:PER|\/)\s*GAL/i,
+    /(\d+\.\d{3})\s*(?:USD|DOLLARS?)?\s*(?:PER|\/)\s*(?:GAL|G)/i,
+    // "10.000G @ 3.199/G" or "10.000 @ 3.199"
+    /@\s*\$?\s*(\d+\.\d{2,3})/i,
+    // Just "PRICE 3.499"
+    /PRICE\s*:?\s*\$?\s*(\d+\.\d{3})/i
   ];
 
   for (const pattern of pricePatterns) {
     const match = rawText.match(pattern);
     if (match) {
-      result.pricePerGallon = parseFloat(match[1]);
-      break;
+      const val = parseFloat(match[1]);
+      if (val > 1.0 && val < 10.0) { // Gas prices are generally $1-$10
+        result.pricePerGallon = val;
+        break;
+      }
     }
   }
 
-  // Extract total gallons (e.g., "12.345 GAL", "GALLONS: 12.345")
+  // 2. Extract Total Gallons
   const gallonPatterns = [
     /(\d+\.\d{1,3})\s*GAL(?:LON)?S?(?!\s*\/)/i,
     /GAL(?:LON)?S?\s*:?\s*(\d+\.\d{1,3})/i,
     /VOLUME\s*:?\s*(\d+\.\d{1,3})/i,
+    // "10.000G @ 3.199/G"
+    /(\d+\.\d{3})\s*G\s*@/i,
+    // Just a standalone 3-decimal number that is likely gallons (e.g. 12.345)
+    /(?:^|\s)(\d+\.\d{3})(?:\s|$)/m
   ];
 
   for (const pattern of gallonPatterns) {
     const match = rawText.match(pattern);
     if (match) {
-      result.totalGallons = parseFloat(match[1]);
-      break;
+      const val = parseFloat(match[1]);
+      // Gallons usually between 1 and 100 for passenger vehicles
+      if (val > 0.5 && val < 150) {
+        // If it perfectly matches the price, skip it (avoid confusing price with gallons if price has 3 decimals)
+        if (result.pricePerGallon && Math.abs(val - result.pricePerGallon) < 0.001) continue;
+        result.totalGallons = val;
+        break;
+      }
     }
   }
 
-  // Extract total amount (e.g., "TOTAL $45.67", "SALE $45.67", "FUEL SALE 45.67")
+  // 3. Extract Total Amount
   const totalPatterns = [
-    /TOTAL\s*:?\s*\$?\s*(\d+\.\d{2})/i,
+    /TOTAL\s*(?:USD)?\s*:?\s*\$?\s*(\d+\.\d{2})/i,
     /SALE\s*(?:TOTAL)?\s*:?\s*\$?\s*(\d+\.\d{2})/i,
     /AMOUNT\s*(?:DUE)?\s*:?\s*\$?\s*(\d+\.\d{2})/i,
     /FUEL\s*SALE\s*:?\s*\$?\s*(\d+\.\d{2})/i,
+    /CREDIT\s*(?:CARD)?\s*:?\s*\$?\s*(\d+\.\d{2})/i,
+    /DEBIT\s*(?:CARD)?\s*:?\s*\$?\s*(\d+\.\d{2})/i,
+    /VISA\s*:?\s*\$?\s*(\d+\.\d{2})/i,
+    /MASTERCARD\s*:?\s*\$?\s*(\d+\.\d{2})/i,
+    /AMEX\s*:?\s*\$?\s*(\d+\.\d{2})/i
   ];
 
   for (const pattern of totalPatterns) {
@@ -665,27 +689,53 @@ function extractBillData(rawText: string): {
     }
   }
 
-  // Extract fuel type
-  if (/PREMIUM|SUPER|V[- ]?POWER|93/i.test(text)) {
-    result.fuelType = 'premium';
-  } else if (/MID\s*GRADE|PLUS|MID|89/i.test(text)) {
-    result.fuelType = 'midgrade';
-  } else if (/DIESEL|DSL/i.test(text)) {
-    result.fuelType = 'diesel';
-  } else if (/REGULAR|UNLEADED|UNL|87/i.test(text)) {
-    result.fuelType = 'regular';
-  }
-
-  // Extract station name (first line is often the station name)
-  const lines = rawText.trim().split('\n').filter((l) => l.trim().length > 0);
-  if (lines.length > 0) {
-    const firstLine = lines[0].trim();
-    if (firstLine.length >= 3 && firstLine.length <= 50 && !/\d{2}\/\d{2}/.test(firstLine)) {
-      result.stationName = firstLine;
+  // Fallback for Total Amount if not found: find the largest dollar amount at the end
+  if (!result.totalAmount) {
+    const allMatches = [...rawText.matchAll(/\$?\s*(\d+\.\d{2})(?!\d)/g)];
+    const amounts = allMatches.map(m => parseFloat(m[1])).filter(v => v > 1.0);
+    if (amounts.length > 0) {
+      result.totalAmount = Math.max(...amounts); // Total is usually the highest amount on the receipt
     }
   }
 
-  // Extract date (MM/DD/YYYY, MM-DD-YYYY, etc.)
+  // 4. Smart Cross-Computation (The "OP" Intelligence)
+  if (result.totalAmount && result.pricePerGallon && !result.totalGallons) {
+    result.totalGallons = parseFloat((result.totalAmount / result.pricePerGallon).toFixed(3));
+  } else if (result.totalAmount && result.totalGallons && !result.pricePerGallon) {
+    result.pricePerGallon = parseFloat((result.totalAmount / result.totalGallons).toFixed(3));
+  } else if (result.totalGallons && result.pricePerGallon && !result.totalAmount) {
+    result.totalAmount = parseFloat((result.totalGallons * result.pricePerGallon).toFixed(2));
+  }
+
+  // 5. Extract Fuel Type
+  if (/PREMIUM|SUPER|V[- ]?POWER|93|SUPREME/i.test(text)) {
+    result.fuelType = 'premium';
+  } else if (/MID\s*GRADE|PLUS|MID|89/i.test(text)) {
+    result.fuelType = 'midgrade';
+  } else if (/DIESEL|DSL|AUTO\s*DSL/i.test(text)) {
+    result.fuelType = 'diesel';
+  } else if (/REGULAR|UNLEADED|UNL|87|REG|87\s*UNL/i.test(text)) {
+    result.fuelType = 'regular';
+  }
+
+  // 6. Extract Station Name
+  const lines = rawText.trim().split('\n').filter((l) => l.trim().length > 0);
+  if (lines.length > 0) {
+    // Try to find known brands first
+    const brands = ['SHELL', 'EXXON', 'MOBIL', 'CHEVRON', 'TEXACO', 'BP', 'ARCO', 'SUNOCO', 'VALERO', 'SPEEDWAY', 'WAWA', 'RACETRAC', 'QUICKTRIP', 'QT', 'MURPHY', 'COSTCO', 'SAMS CLUB', 'KROGER'];
+    const brandMatch = brands.find(b => text.includes(b));
+    
+    if (brandMatch) {
+      result.stationName = brandMatch;
+    } else {
+      const firstLine = lines[0].trim();
+      if (firstLine.length >= 3 && firstLine.length <= 50 && !/\d{2}\/\d{2}/.test(firstLine)) {
+        result.stationName = firstLine;
+      }
+    }
+  }
+
+  // 7. Extract Date
   const datePatterns = [
     /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
     /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/,
@@ -704,10 +754,11 @@ function extractBillData(rawText: string): {
     }
   }
 
-  // Extract payment method
+  // 8. Extract Payment Method
   if (/VISA/i.test(text)) result.paymentMethod = 'VISA';
   else if (/MASTER\s*CARD|MC/i.test(text)) result.paymentMethod = 'MasterCard';
   else if (/AMEX|AMERICAN\s*EXPRESS/i.test(text)) result.paymentMethod = 'Amex';
+  else if (/DISCOVER/i.test(text)) result.paymentMethod = 'Discover';
   else if (/DEBIT/i.test(text)) result.paymentMethod = 'Debit';
   else if (/CASH/i.test(text)) result.paymentMethod = 'Cash';
   else if (/APPLE\s*PAY/i.test(text)) result.paymentMethod = 'Apple Pay';
