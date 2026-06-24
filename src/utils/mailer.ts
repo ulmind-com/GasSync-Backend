@@ -9,12 +9,14 @@ export const sendOTP = async (email: string, otp: string) => {
   }
 
   try {
+    const senderEmail = process.env.BREVO_SENDER_EMAIL || 'no-reply@gassync.com';
+    
     await axios.post(
       'https://api.brevo.com/v3/smtp/email',
       {
         sender: {
           name: 'GasSync',
-          email: 'no-reply@gassync.com', // Will be overridden by verified sender in Brevo if needed, or leave generic
+          email: senderEmail,
         },
         to: [
           {
