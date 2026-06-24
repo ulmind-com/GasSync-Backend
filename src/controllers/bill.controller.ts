@@ -671,6 +671,90 @@ Example output:
       next(error);
     }
   }
+
+  /**
+   * Toggle helpful vote on a bill
+   */
+  static async toggleHelpful(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const userId = req.userId;
+
+      const bill = await Bill.findById(id);
+      if (!bill) {
+        ApiResponseHelper.error(res, 'Bill not found', 404);
+        return;
+      }
+
+      const helpfulIndex = bill.helpfulUsers.indexOf(userId as any);
+      const notHelpfulIndex = bill.notHelpfulUsers.indexOf(userId as any);
+
+      if (helpfulIndex > -1) {
+        // User already voted helpful, so remove the vote
+        bill.helpfulUsers.splice(helpfulIndex, 1);
+      } else {
+        // User hasn't voted helpful, add it
+        bill.helpfulUsers.push(userId as any);
+        // And remove from not helpful if they had voted that
+        if (notHelpfulIndex > -1) {
+          bill.notHelpfulUsers.splice(notHelpfulIndex, 1);
+        }
+      }
+
+      await bill.save();
+
+      ApiResponseHelper.success(res, {
+        helpfulCount: bill.helpfulUsers.length,
+        notHelpfulCount: bill.notHelpfulUsers.length,
+        userVotedHelpful: bill.helpfulUsers.includes(userId as any),
+        userVotedNotHelpful: bill.notHelpfulUsers.includes(userId as any)
+      }, 'Helpful status updated');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Toggle not helpful vote on a bill
+   */
+  static async toggleNotHelpful(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const userId = req.userId;
+
+      const bill = await Bill.findById(id);
+      if (!bill) {
+        ApiResponseHelper.error(res, 'Bill not found', 404);
+        return;
+      }
+
+      const helpfulIndex = bill.helpfulUsers.indexOf(userId as any);
+      const notHelpfulIndex = bill.notHelpfulUsers.indexOf(userId as any);
+
+      if (notHelpfulIndex > -1) {
+        // User already voted not helpful, so remove the vote
+        bill.notHelpfulUsers.splice(notHelpfulIndex, 1);
+      } else {
+        // User hasn't voted not helpful, add it
+        bill.notHelpfulUsers.push(userId as any);
+        // And remove from helpful if they had voted that
+        if (helpfulIndex > -1) {
+          bill.helpfulUsers.splice(helpfulIndex, 1);
+        }
+      }
+
+      await bill.save();
+
+      ApiResponseHelper.success(res, {
+        helpfulCount: bill.helpfulUsers.length,
+        notHelpfulCount: bill.notHelpfulUsers.length,
+        userVotedHelpful: bill.helpfulUsers.includes(userId as any),
+        userVotedNotHelpful: bill.notHelpfulUsers.includes(userId as any)
+      }, 'Not helpful status updated');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 // ============================================================

@@ -48,7 +48,9 @@ router.get('/', BillController.getUserBills);
 router.get('/:id', BillController.getBillById);
 router.post('/', uploadBillImage, BillController.uploadBill);
 router.put('/:id', validate(updateBillValidation), BillController.updateBill);
-router.delete('/:id', BillController.deleteBill);
 router.post('/:id/process-ocr', validate(ocrValidation), BillController.processOCR);
+router.post('/:id/helpful', BillController.toggleHelpful);
+router.post('/:id/not-helpful', BillController.toggleNotHelpful);
+router.delete('/:id', BillController.deleteBill);
 
 export default router;

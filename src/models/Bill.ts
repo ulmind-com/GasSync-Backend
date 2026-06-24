@@ -38,6 +38,10 @@ export interface IBill extends Document {
   userCorrected: boolean;
   correctedFields?: string[];
 
+  // Community Rating
+  helpfulUsers: mongoose.Types.ObjectId[];
+  notHelpfulUsers: mongoose.Types.ObjectId[];
+
   // Notes
   notes?: string;
 
@@ -148,10 +152,25 @@ const billSchema = new Schema<IBill>(
       type: Boolean,
       default: false,
     },
-    correctedFields: {
-      type: [String],
-      default: [],
-    },
+    correctedFields: [
+      {
+        type: String,
+      },
+    ],
+
+    // Community Rating
+    helpfulUsers: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    notHelpfulUsers: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
 
     notes: {
       type: String,
