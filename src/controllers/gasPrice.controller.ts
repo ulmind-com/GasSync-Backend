@@ -531,7 +531,7 @@ export class GasPriceController {
       // Also fetch community prices
       const communityPrices = await Bill.find({
         googlePlaceId,
-        status: { $in: ['extracted', 'verified'] },
+        status: 'verified',
         pricePerGallon: { $ne: null },
       })
         .sort({ billDate: -1 })
@@ -563,7 +563,7 @@ export class GasPriceController {
         
         const communityPrices = await Bill.find({
           googlePlaceId: req.params.googlePlaceId,
-          status: { $in: ['extracted', 'verified'] },
+          status: 'verified',
           pricePerGallon: { $ne: null },
         })
           .sort({ billDate: -1 })

@@ -276,7 +276,12 @@ Example output:
       const skip = (page - 1) * limit;
 
       const filter: Record<string, any> = { user: req.userId };
-      if (status) filter.status = status;
+      // By default only show verified (confirmed) bills — hide processing/extracted drafts
+      if (status) {
+        filter.status = status;
+      } else {
+        filter.status = 'verified';
+      }
       if (fuelType) filter.fuelType = fuelType;
       if (startDate || endDate) {
         filter.billDate = {};
@@ -416,11 +421,11 @@ Example output:
         bill.correctedFields = correctedFields;
       }
 
-      // If user provides price data, mark as verified
-      if (req.body.pricePerGallon && req.body.billDate) {
-        bill.status = 'verified';
+      // Always mark as verified when user submits/confirms
+      bill.status = 'verified';
 
-        // Also create a GasPrice entry from the bill data
+      // Also create a GasPrice entry from the bill data if we have price
+      if (bill.pricePerGallon) {
         const priceEntry = new GasPrice({
           station: bill.station || undefined,
           fuelType: bill.fuelType || 'regular',
@@ -429,7 +434,7 @@ Example output:
           state: req.body.state,
           city: req.body.city,
           reportedBy: req.userId,
-          recordedAt: new Date(bill.billDate!),
+          recordedAt: bill.billDate ? new Date(bill.billDate!) : new Date(),
         });
         await priceEntry.save();
       }
