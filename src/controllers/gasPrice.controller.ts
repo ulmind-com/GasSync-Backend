@@ -470,11 +470,15 @@ export class GasPriceController {
           fuelPrices: cached.fuelPrices,
           fetchedAt: cached.fetchedAt,
           communityPrices: communityPrices.map(b => ({
+            id: b._id,
             fuelType: b.fuelType || 'regular',
             price: b.pricePerGallon,
             reportedBy: (b.user as any)?.displayName || 'Anonymous',
             billDate: b.billDate,
             source: 'user_bill',
+            imageUrl: b.imageUrl,
+            totalAmount: b.totalAmount,
+            totalGallons: b.totalGallons,
           })),
         }, 'Station prices retrieved (cached)');
         return;
@@ -541,11 +545,15 @@ export class GasPriceController {
         fuelPrices: normalizedPrices,
         fetchedAt: new Date(),
         communityPrices: communityPrices.map(b => ({
+          id: b._id,
           fuelType: b.fuelType || 'regular',
           price: b.pricePerGallon,
           reportedBy: (b.user as any)?.displayName || 'Anonymous',
           billDate: b.billDate,
           source: 'user_bill',
+          imageUrl: b.imageUrl,
+          totalAmount: b.totalAmount,
+          totalGallons: b.totalGallons,
         })),
       }, 'Station prices retrieved (fresh)');
     } catch (error: any) {
@@ -569,11 +577,15 @@ export class GasPriceController {
           fuelPrices: [],
           fetchedAt: null,
           communityPrices: communityPrices.map(b => ({
+            id: b._id,
             fuelType: b.fuelType || 'regular',
             price: b.pricePerGallon,
             reportedBy: (b.user as any)?.displayName || 'Anonymous',
             billDate: b.billDate,
             source: 'user_bill',
+            imageUrl: b.imageUrl,
+            totalAmount: b.totalAmount,
+            totalGallons: b.totalGallons,
           })),
         }, 'Only community prices available');
         return;
