@@ -536,7 +536,7 @@ export class GasPriceController {
       })
         .sort({ billDate: -1 })
         .limit(10)
-        .populate('user', 'displayName')
+        .populate('user', 'displayName avatarUrl')
         .lean();
 
       ApiResponseHelper.success(res, {
@@ -549,6 +549,7 @@ export class GasPriceController {
           fuelType: b.fuelType || 'regular',
           price: b.pricePerGallon,
           reportedBy: (b.user as any)?.displayName || 'Anonymous',
+          reportedByAvatar: (b.user as any)?.avatarUrl || null,
           billDate: b.billDate,
           source: 'user_bill',
           imageUrl: b.imageUrl,
@@ -568,7 +569,7 @@ export class GasPriceController {
         })
           .sort({ billDate: -1 })
           .limit(10)
-          .populate('user', 'displayName')
+          .populate('user', 'displayName avatarUrl')
           .lean();
 
         ApiResponseHelper.success(res, {
@@ -581,6 +582,7 @@ export class GasPriceController {
             fuelType: b.fuelType || 'regular',
             price: b.pricePerGallon,
             reportedBy: (b.user as any)?.displayName || 'Anonymous',
+            reportedByAvatar: (b.user as any)?.avatarUrl || null,
             billDate: b.billDate,
             source: 'user_bill',
             imageUrl: b.imageUrl,
