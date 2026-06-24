@@ -479,6 +479,10 @@ export class GasPriceController {
             imageUrl: b.imageUrl,
             totalAmount: b.totalAmount,
             totalGallons: b.totalGallons,
+            helpfulCount: b.helpfulUsers?.length || 0,
+            notHelpfulCount: b.notHelpfulUsers?.length || 0,
+            helpfulUsers: b.helpfulUsers || [],
+            notHelpfulUsers: b.notHelpfulUsers || [],
           })),
         }, 'Station prices retrieved (cached)');
         return;
@@ -555,6 +559,10 @@ export class GasPriceController {
           imageUrl: b.imageUrl,
           totalAmount: b.totalAmount,
           totalGallons: b.totalGallons,
+          helpfulCount: b.helpfulUsers?.length || 0,
+          notHelpfulCount: b.notHelpfulUsers?.length || 0,
+          helpfulUsers: b.helpfulUsers || [],
+          notHelpfulUsers: b.notHelpfulUsers || [],
         })),
       }, 'Station prices retrieved (fresh)');
     } catch (error: any) {
@@ -588,6 +596,10 @@ export class GasPriceController {
             imageUrl: b.imageUrl,
             totalAmount: b.totalAmount,
             totalGallons: b.totalGallons,
+            helpfulCount: b.helpfulUsers?.length || 0,
+            notHelpfulCount: b.notHelpfulUsers?.length || 0,
+            helpfulUsers: b.helpfulUsers || [],
+            notHelpfulUsers: b.notHelpfulUsers || [],
           })),
         }, 'Only community prices available');
         return;
