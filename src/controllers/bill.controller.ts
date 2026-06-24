@@ -74,76 +74,141 @@ export class BillController {
       await bill.save();
       logger.info(`Bill uploaded by user ${req.userId}: ${bill._id}`);
 
-      // ─── OCR Pipeline: Send image to OCR.space for text extraction ───
+      // ─── AI Pipeline: Send image to Groq Vision (Llama 4 Scout) for intelligent extraction ───
       try {
-        const OCR_API_KEY = process.env.OCR_SPACE_API_KEY || 'K81540990988957';
+        const GROQ_API_KEY = process.env.GROQ_API_KEY;
         
-        logger.info(`[OCR] Starting OCR for bill ${bill._id} — image: ${imageUrl}`);
-
-        const ocrFormData = new URLSearchParams();
-        ocrFormData.append('url', imageUrl);
-        ocrFormData.append('OCREngine', '2');        // Engine 2 = best for receipts
-        ocrFormData.append('isTable', 'true');        // Better table/receipt parsing
-        ocrFormData.append('scale', 'true');           // Upscale for better accuracy
-        ocrFormData.append('detectOrientation', 'true');
-
-        const ocrResponse = await axios.post(
-          'https://api.ocr.space/parse/image',
-          ocrFormData.toString(),
-          {
-            headers: {
-              'apikey': OCR_API_KEY,
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            timeout: 30000,
-          }
-        );
-
-        const ocrResult = ocrResponse.data;
-
-        if (ocrResult?.ParsedResults && ocrResult.ParsedResults.length > 0 && !ocrResult.IsErroredOnProcessing) {
-          const ocrText = ocrResult.ParsedResults[0].ParsedText || '';
-          
-          logger.info(`[OCR] Raw text extracted (${ocrText.length} chars) for bill ${bill._id}`);
-
-          // Store raw OCR data
-          bill.ocrRawText = ocrText;
-          bill.ocrConfidence = ocrResult.ParsedResults[0]?.TextOverlay?.confidence || null;
-          bill.ocrProvider = 'ocr_space';
-
-          // ─── Parse structured data from raw OCR text ───
-          const extracted = extractBillData(ocrText);
-
-          if (extracted.pricePerGallon) bill.pricePerGallon = extracted.pricePerGallon;
-          if (extracted.totalGallons) bill.totalGallons = extracted.totalGallons;
-          if (extracted.totalAmount) bill.totalAmount = extracted.totalAmount;
-          if (extracted.fuelType) bill.fuelType = extracted.fuelType;
-          if (extracted.stationName && !bill.stationName) bill.stationName = extracted.stationName;
-          if (extracted.billDate) bill.billDate = extracted.billDate;
-          if (extracted.paymentMethod) bill.paymentMethod = extracted.paymentMethod;
-
-          // If we got a price, mark as extracted
-          if (extracted.pricePerGallon || extracted.totalAmount) {
-            bill.status = 'extracted';
-            logger.info(`[OCR] ✅ Extraction success for bill ${bill._id}: $${extracted.pricePerGallon}/gal, ${extracted.fuelType}, total: $${extracted.totalAmount}`);
-          } else {
-            bill.status = 'extracted'; // Still mark as extracted so user can correct
-            logger.info(`[OCR] ⚠️ No price found in OCR text for bill ${bill._id}, user can correct manually`);
-          }
+        if (!GROQ_API_KEY) {
+          logger.warn(`[AI] No GROQ_API_KEY found, skipping extraction for bill ${bill._id}`);
+          bill.status = 'extracted';
+          bill.processingError = 'No AI API key configured';
+          await bill.save();
         } else {
-          const errorMsg = ocrResult?.ErrorMessage?.[0] || 'Unknown OCR error';
-          logger.warn(`[OCR] ❌ OCR failed for bill ${bill._id}: ${errorMsg}`);
-          bill.status = 'extracted'; // Don't block — let user correct
-          bill.processingError = `OCR processing failed: ${errorMsg}`;
-          bill.ocrProvider = 'ocr_space';
-        }
+          logger.info(`[AI] Starting Groq Vision extraction for bill ${bill._id} — image: ${imageUrl}`);
 
-        await bill.save();
+          // Download the image and convert to base64
+          const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 15000 });
+          const base64Image = Buffer.from(imageResponse.data).toString('base64');
+          const mimeType = imageResponse.headers['content-type'] || 'image/jpeg';
+
+          // Call Groq Vision API (OpenAI-compatible format)
+          const groqResponse = await axios.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {
+              model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'image_url',
+                      image_url: {
+                        url: `data:${mimeType};base64,${base64Image}`,
+                      }
+                    },
+                    {
+                      type: 'text',
+                      text: `You are an expert gas station receipt/bill reader. Analyze this gas station receipt image and extract the following data. Be extremely accurate with numbers.
+
+Extract these fields:
+1. stationName - The gas station name/brand (e.g., "Shell", "Exxon", "Chevron", "BP")
+2. pricePerGallon - The price per gallon of fuel (a number like 3.459). Look for "PRICE/GAL", "UNIT PRICE", or similar.
+3. totalGallons - Total gallons pumped (a number like 12.345). Look for "GALLONS", "GAL", "VOLUME", or similar.
+4. totalAmount - The total dollar amount paid (a number like 42.50). Look for "TOTAL", "SALE", "AMOUNT DUE", or the final amount.
+5. fuelType - One of: "regular", "midgrade", "premium", "diesel". Determine from keywords like "REGULAR", "UNLEADED", "87", "MIDGRADE", "PLUS", "89", "PREMIUM", "SUPER", "93", "V-POWER", "DIESEL".
+6. billDate - The date on the receipt in ISO format (YYYY-MM-DD). Look for any date on the receipt.
+7. paymentMethod - Payment method used (e.g., "VISA", "MasterCard", "Amex", "Debit", "Cash", "Apple Pay")
+
+IMPORTANT RULES:
+- If you can compute a missing field from other fields (e.g., totalAmount = pricePerGallon × totalGallons), do the math and fill it in.
+- If a field is truly not visible or determinable, set it to null.
+- Return ONLY a valid JSON object with these exact field names, nothing else. No markdown, no explanation, no extra text.
+- Numbers should be numbers (not strings). Dates should be strings in "YYYY-MM-DD" format.
+
+Example output:
+{"stationName":"Shell","pricePerGallon":3.459,"totalGallons":12.345,"totalAmount":42.70,"fuelType":"regular","billDate":"2026-06-20","paymentMethod":"VISA"}`
+                    }
+                  ]
+                }
+              ],
+              temperature: 0.1,
+              max_tokens: 512,
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${GROQ_API_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              timeout: 30000,
+            }
+          );
+
+          const aiText = groqResponse.data?.choices?.[0]?.message?.content || '';
+          logger.info(`[AI] Groq raw response for bill ${bill._id}: ${aiText}`);
+
+          // Store raw AI response
+          bill.ocrRawText = aiText;
+          bill.ocrProvider = 'groq_vision';
+
+          // Parse the JSON response
+          try {
+            // Clean up the response — remove markdown code blocks if present
+            const cleanJson = aiText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            const extracted = JSON.parse(cleanJson);
+
+            if (extracted.pricePerGallon && typeof extracted.pricePerGallon === 'number') {
+              bill.pricePerGallon = extracted.pricePerGallon;
+            }
+            if (extracted.totalGallons && typeof extracted.totalGallons === 'number') {
+              bill.totalGallons = extracted.totalGallons;
+            }
+            if (extracted.totalAmount && typeof extracted.totalAmount === 'number') {
+              bill.totalAmount = extracted.totalAmount;
+            }
+            if (extracted.fuelType && ['regular', 'midgrade', 'premium', 'diesel'].includes(extracted.fuelType)) {
+              bill.fuelType = extracted.fuelType;
+            }
+            if (extracted.stationName && !bill.stationName) {
+              bill.stationName = extracted.stationName;
+            }
+            if (extracted.billDate) {
+              const parsedDate = new Date(extracted.billDate);
+              if (!isNaN(parsedDate.getTime())) {
+                bill.billDate = parsedDate;
+              }
+            }
+            if (extracted.paymentMethod) {
+              bill.paymentMethod = extracted.paymentMethod;
+            }
+
+            // Mark status based on extraction quality
+            if (extracted.pricePerGallon || extracted.totalAmount) {
+              bill.status = 'extracted';
+              logger.info(`[AI] ✅ Groq extraction success for bill ${bill._id}: $${extracted.pricePerGallon}/gal, ${extracted.fuelType}, ${extracted.totalGallons} gal, total: $${extracted.totalAmount}`);
+            } else {
+              bill.status = 'extracted';
+              logger.info(`[AI] ⚠️ Groq could not find price data for bill ${bill._id}`);
+            }
+          } catch (parseError: any) {
+            logger.warn(`[AI] Failed to parse Groq JSON for bill ${bill._id}: ${parseError.message}`);
+            bill.status = 'extracted';
+            bill.processingError = `AI response parse error: ${parseError.message}`;
+            
+            // Fallback: try the old regex extraction on the AI text
+            const fallbackExtracted = extractBillData(aiText);
+            if (fallbackExtracted.pricePerGallon) bill.pricePerGallon = fallbackExtracted.pricePerGallon;
+            if (fallbackExtracted.totalGallons) bill.totalGallons = fallbackExtracted.totalGallons;
+            if (fallbackExtracted.totalAmount) bill.totalAmount = fallbackExtracted.totalAmount;
+            if (fallbackExtracted.fuelType) bill.fuelType = fallbackExtracted.fuelType;
+          }
+
+          await bill.save();
+        }
       } catch (ocrError: any) {
-        // OCR failure should NOT block the bill upload
-        logger.error(`[OCR] Exception during OCR for bill ${bill._id}: ${ocrError.message}`);
+        // AI failure should NOT block the bill upload
+        logger.error(`[AI] Exception during Groq Vision for bill ${bill._id}: ${ocrError.message}`);
         bill.status = 'extracted';
-        bill.processingError = `OCR exception: ${ocrError.message}`;
+        bill.processingError = `AI exception: ${ocrError.message}`;
         await bill.save();
       }
 
