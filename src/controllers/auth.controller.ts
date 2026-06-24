@@ -9,6 +9,8 @@ import User from '../models/User';
 import { ApiResponseHelper } from '../utils/apiResponse';
 import { BadRequestError, UnauthorizedError, ConflictError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import { OTP } from '../models/OTP';
+import { sendOTP } from '../utils/mailer';
 
 /**
  * Generate JWT tokens
@@ -79,7 +81,17 @@ export class AuthController {
    */
   static async register(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { email, password, displayName, preferredFuelType, defaultZipCode } = req.body;
+      const { email, password, displayName, preferredFuelType, defaultZipCode, otp } = req.body;
+
+      if (!otp) {
+        throw new BadRequestError('OTP is required for registration');
+      }
+
+      // Check OTP
+      const validOtp = await OTP.findOne({ email: email.toLowerCase(), otp });
+      if (!validOtp) {
+        throw new BadRequestError('Invalid or expired OTP');
+      }
 
       // Check if user already exists
       const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -97,6 +109,9 @@ export class AuthController {
       });
 
       await user.save();
+
+      // Delete OTP
+      await OTP.deleteOne({ _id: validOtp._id });
 
       // Generate tokens
       const { accessToken, refreshToken } = generateTokens(
@@ -117,6 +132,49 @@ export class AuthController {
         accessToken,
         refreshToken,
       }, 'Registration successful');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async sendOTPHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { email } = req.body;
+      if (!email) throw new BadRequestError('Email is required');
+
+      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      if (existingUser) {
+        throw new ConflictError('An account with this email already exists');
+      }
+
+      // Delete any existing OTP for this email
+      await OTP.deleteMany({ email: email.toLowerCase() });
+
+      // Generate 4 digit OTP
+      const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+      
+      await OTP.create({ email: email.toLowerCase(), otp: otpCode });
+      
+      // Send email
+      await sendOTP(email, otpCode);
+
+      ApiResponseHelper.success(res, null, 'OTP sent successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async verifyOTPHandler(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { email, otp } = req.body;
+      if (!email || !otp) throw new BadRequestError('Email and OTP are required');
+
+      const validOtp = await OTP.findOne({ email: email.toLowerCase(), otp });
+      if (!validOtp) {
+        throw new BadRequestError('Invalid or expired OTP');
+      }
+
+      ApiResponseHelper.success(res, null, 'OTP is valid');
     } catch (error) {
       next(error);
     }

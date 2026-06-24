@@ -14,6 +14,7 @@ const router = Router();
 // Validation rules
 const registerValidation = [
   body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('otp').isLength({ min: 4, max: 4 }).withMessage('Valid 4-digit OTP is required'),
   body('password')
     .isLength({ min: 8 })
     .withMessage('Password must be at least 8 characters')
@@ -48,6 +49,8 @@ const changePasswordValidation = [
 ];
 
 // Public routes
+router.post('/send-otp', body('email').isEmail().normalizeEmail().withMessage('Valid email is required'), validate([]), AuthController.sendOTPHandler);
+router.post('/verify-otp', body('email').isEmail().normalizeEmail(), body('otp').notEmpty(), validate([]), AuthController.verifyOTPHandler);
 router.post('/register', validate(registerValidation), AuthController.register);
 router.post('/login', validate(loginValidation), AuthController.login);
 router.post('/refresh', AuthController.refreshToken);
