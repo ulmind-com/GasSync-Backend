@@ -13,6 +13,7 @@ export interface IBill extends Document {
   station?: mongoose.Types.ObjectId;
   imageUrl: string;
   thumbnailUrl?: string;
+  googlePlaceId?: string;
 
   // Extracted data from OCR
   stationName?: string;
