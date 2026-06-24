@@ -5,6 +5,7 @@
 import { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import axios from 'axios';
 import Bill from '../models/Bill';
 import GasPrice from '../models/GasPrice';
 import GasStation from '../models/GasStation';
