@@ -10,7 +10,7 @@ import { ApiResponseHelper } from '../utils/apiResponse';
 import { BadRequestError, UnauthorizedError, ConflictError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { OTP } from '../models/OTP';
-import { sendOTP } from '../utils/mailer';
+import { sendOTP, sendResetOTP } from '../utils/mailer';
 import { OAuth2Client } from 'google-auth-library';
 
 const googleClient = new OAuth2Client();
@@ -635,6 +635,112 @@ export class AuthController {
       await user.save();
       
       ApiResponseHelper.success(res, user.favorites, 'Favorites updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/v1/auth/forgot-password:
+   *   post:
+   *     summary: Request a password reset OTP
+   *     tags: [Auth]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - email
+   *             properties:
+   *               email:
+   *                 type: string
+   */
+  static async forgotPassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { email } = req.body;
+      if (!email) throw new BadRequestError('Email is required');
+
+      const user = await User.findOne({ email });
+      if (!user) {
+        // Return success even if user not found to prevent email enumeration
+        return ApiResponseHelper.success(res, null, 'If that email is registered, we have sent a reset code.');
+      }
+
+      // Generate 6 digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Save OTP to user and set expiry to 15 mins
+      user.resetPasswordOTP = otp;
+      user.resetPasswordExpire = new Date(Date.now() + 15 * 60 * 1000);
+      await user.save();
+
+      await sendResetOTP(user.email, otp);
+
+      ApiResponseHelper.success(res, null, 'If that email is registered, we have sent a reset code.');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/v1/auth/verify-reset-otp:
+   *   post:
+   *     summary: Verify password reset OTP
+   *     tags: [Auth]
+   */
+  static async verifyResetOTP(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { email, otp } = req.body;
+      if (!email || !otp) throw new BadRequestError('Email and OTP are required');
+
+      const user = await User.findOne({ 
+        email,
+        resetPasswordOTP: otp,
+        resetPasswordExpire: { $gt: new Date() }
+      });
+
+      if (!user) {
+        throw new BadRequestError('Invalid or expired reset code');
+      }
+
+      ApiResponseHelper.success(res, null, 'OTP verified successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/v1/auth/reset-password:
+   *   post:
+   *     summary: Reset password using OTP
+   *     tags: [Auth]
+   */
+  static async resetPassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { email, otp, newPassword } = req.body;
+      if (!email || !otp || !newPassword) throw new BadRequestError('Email, OTP, and new password are required');
+
+      const user = await User.findOne({ 
+        email,
+        resetPasswordOTP: otp,
+        resetPasswordExpire: { $gt: new Date() }
+      });
+
+      if (!user) {
+        throw new BadRequestError('Invalid or expired reset code');
+      }
+
+      user.password = newPassword;
+      user.resetPasswordOTP = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save();
+
+      ApiResponseHelper.success(res, null, 'Password has been reset successfully');
     } catch (error) {
       next(error);
     }

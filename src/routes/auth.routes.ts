@@ -55,6 +55,9 @@ router.post('/register', validate(registerValidation), AuthController.register);
 router.post('/login', validate(loginValidation), AuthController.login);
 router.post('/google', body('idToken').notEmpty().withMessage('idToken is required'), validate([]), AuthController.googleLogin);
 router.post('/refresh', AuthController.refreshToken);
+router.post('/forgot-password', body('email').isEmail().normalizeEmail().withMessage('Valid email is required'), validate([]), AuthController.forgotPassword);
+router.post('/verify-reset-otp', body('email').isEmail().normalizeEmail(), body('otp').notEmpty(), validate([]), AuthController.verifyResetOTP);
+router.post('/reset-password', body('email').isEmail().normalizeEmail(), body('otp').notEmpty(), body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters').matches(/\d/).withMessage('New password must contain at least one number'), validate([]), AuthController.resetPassword);
 
 // Protected routes
 router.post('/logout', authenticate, AuthController.logout);

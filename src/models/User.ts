@@ -17,6 +17,8 @@ export interface IUser extends Document {
   defaultState?: string;
   role: 'user' | 'admin';
   isEmailVerified: boolean;
+  resetPasswordOTP?: string;
+  resetPasswordExpire?: Date;
   refreshToken?: string;
   lastLoginAt?: Date;
   createdAt: Date;
@@ -110,6 +112,12 @@ const userSchema = new Schema<IUser>(
     isEmailVerified: {
       type: Boolean,
       default: false,
+    },
+    resetPasswordOTP: {
+      type: String,
+    },
+    resetPasswordExpire: {
+      type: Date,
     },
     refreshToken: {
       type: String,
