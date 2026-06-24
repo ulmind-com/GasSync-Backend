@@ -115,7 +115,7 @@ Extract these fields:
 2. pricePerGallon - The price per gallon of fuel (a number like 3.459). Look for "PRICE/GAL", "UNIT PRICE", or similar.
 3. totalGallons - Total gallons pumped (a number like 12.345). Look for "GALLONS", "GAL", "VOLUME", or similar.
 4. totalAmount - The total dollar amount paid (a number like 42.50). Look for "TOTAL", "SALE", "AMOUNT DUE", or the final amount.
-5. fuelType - One of: "regular", "midgrade", "premium", "diesel". Determine from keywords like "REGULAR", "UNLEADED", "87", "MIDGRADE", "PLUS", "89", "PREMIUM", "SUPER", "93", "V-POWER", "DIESEL".
+5. fuelType - One of: "regular", "midgrade", "premium", "diesel", "e85", "unl88". Determine from keywords: "REGULAR"/"UNLEADED"/"87" = "regular", "MIDGRADE"/"PLUS"/"89" = "midgrade", "PREMIUM"/"SUPER"/"93"/"V-POWER" = "premium", "DIESEL"/"DSL" = "diesel", "E85"/"FLEX FUEL"/"ETHANOL" = "e85", "UNL88"/"88" = "unl88".
 6. billDate - The date on the receipt in ISO format (YYYY-MM-DD). Look for any date on the receipt.
 7. paymentMethod - Payment method used (e.g., "VISA", "MasterCard", "Amex", "Debit", "Cash", "Apple Pay")
 
@@ -165,7 +165,7 @@ Example output:
             if (extracted.totalAmount && typeof extracted.totalAmount === 'number') {
               bill.totalAmount = extracted.totalAmount;
             }
-            if (extracted.fuelType && ['regular', 'midgrade', 'premium', 'diesel'].includes(extracted.fuelType)) {
+            if (extracted.fuelType && ['regular', 'midgrade', 'premium', 'diesel', 'e85', 'unl88'].includes(extracted.fuelType)) {
               bill.fuelType = extracted.fuelType;
             }
             if (extracted.stationName && !bill.stationName) {

@@ -85,7 +85,7 @@ const billSchema = new Schema<IBill>(
     },
     fuelType: {
       type: String,
-      enum: ['regular', 'midgrade', 'premium', 'diesel'],
+      enum: ['regular', 'midgrade', 'premium', 'diesel', 'e85', 'unl88'],
       default: null,
     },
     pricePerGallon: {

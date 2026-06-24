@@ -4,7 +4,7 @@
 
 import mongoose, { Document, Schema, Model } from 'mongoose';
 
-export type FuelType = 'regular' | 'midgrade' | 'premium' | 'diesel';
+export type FuelType = 'regular' | 'midgrade' | 'premium' | 'diesel' | 'e85' | 'unl88';
 export type PriceSource = 'api_eia' | 'api_collect' | 'user_bill' | 'user_report' | 'admin';
 
 export interface IGasPrice extends Document {
