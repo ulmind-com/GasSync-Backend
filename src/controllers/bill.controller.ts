@@ -56,38 +56,100 @@ export class BillController {
         throw new BadRequestError('Bill image is required');
       }
 
-      // Build image URL (local for dev, cloud URL for production)
-      const imageUrl = req.file.path
-        ? `/uploads/bills/${req.file.filename}`
-        : `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-
-      // Parse user-submitted price data (from form fields)
-      const pricePerGallon = req.body.pricePerGallon ? parseFloat(req.body.pricePerGallon) : null;
-      const totalAmount = req.body.totalAmount ? parseFloat(req.body.totalAmount) : null;
-      const totalGallons = req.body.totalGallons ? parseFloat(req.body.totalGallons) : null;
-      const fuelType = req.body.fuelType || null;
-      const hasPrice = pricePerGallon && pricePerGallon > 0;
+      // Cloudinary stores the file and gives us a URL in req.file.path
+      const imageUrl = req.file.path || `/uploads/bills/${req.file.filename}`;
 
       const bill = new Bill({
         user: req.userId,
         imageUrl,
         googlePlaceId: req.body.googlePlaceId || null,
         stationName: req.body.stationName || null,
-        fuelType,
-        pricePerGallon,
-        totalAmount,
-        totalGallons,
-        billDate: new Date(),
+        fuelType: req.body.fuelType || null,
         notes: req.body.notes || null,
-        status: hasPrice ? 'extracted' : 'processing',
+        billDate: new Date(),
+        status: 'processing',
       });
 
       await bill.save();
+      logger.info(`Bill uploaded by user ${req.userId}: ${bill._id}`);
 
-      logger.info(`Bill uploaded by user ${req.userId}: ${bill._id} (status: ${bill.status})`);
+      // ─── OCR Pipeline: Send image to OCR.space for text extraction ───
+      try {
+        const OCR_API_KEY = process.env.OCR_SPACE_API_KEY || 'K81540990988957';
+        
+        logger.info(`[OCR] Starting OCR for bill ${bill._id} — image: ${imageUrl}`);
 
+        const ocrFormData = new URLSearchParams();
+        ocrFormData.append('url', imageUrl);
+        ocrFormData.append('OCREngine', '2');        // Engine 2 = best for receipts
+        ocrFormData.append('isTable', 'true');        // Better table/receipt parsing
+        ocrFormData.append('scale', 'true');           // Upscale for better accuracy
+        ocrFormData.append('detectOrientation', 'true');
 
-      ApiResponseHelper.created(res, bill, 'Bill uploaded successfully. Processing will begin shortly.');
+        const ocrResponse = await axios.post(
+          'https://api.ocr.space/parse/image',
+          ocrFormData.toString(),
+          {
+            headers: {
+              'apikey': OCR_API_KEY,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            timeout: 30000,
+          }
+        );
+
+        const ocrResult = ocrResponse.data;
+
+        if (ocrResult?.ParsedResults && ocrResult.ParsedResults.length > 0 && !ocrResult.IsErroredOnProcessing) {
+          const ocrText = ocrResult.ParsedResults[0].ParsedText || '';
+          
+          logger.info(`[OCR] Raw text extracted (${ocrText.length} chars) for bill ${bill._id}`);
+
+          // Store raw OCR data
+          bill.ocrRawText = ocrText;
+          bill.ocrConfidence = ocrResult.ParsedResults[0]?.TextOverlay?.confidence || null;
+          bill.ocrProvider = 'ocr_space';
+
+          // ─── Parse structured data from raw OCR text ───
+          const extracted = extractBillData(ocrText);
+
+          if (extracted.pricePerGallon) bill.pricePerGallon = extracted.pricePerGallon;
+          if (extracted.totalGallons) bill.totalGallons = extracted.totalGallons;
+          if (extracted.totalAmount) bill.totalAmount = extracted.totalAmount;
+          if (extracted.fuelType) bill.fuelType = extracted.fuelType;
+          if (extracted.stationName && !bill.stationName) bill.stationName = extracted.stationName;
+          if (extracted.billDate) bill.billDate = extracted.billDate;
+          if (extracted.paymentMethod) bill.paymentMethod = extracted.paymentMethod;
+
+          // If we got a price, mark as extracted
+          if (extracted.pricePerGallon || extracted.totalAmount) {
+            bill.status = 'extracted';
+            logger.info(`[OCR] ✅ Extraction success for bill ${bill._id}: $${extracted.pricePerGallon}/gal, ${extracted.fuelType}, total: $${extracted.totalAmount}`);
+          } else {
+            bill.status = 'extracted'; // Still mark as extracted so user can correct
+            logger.info(`[OCR] ⚠️ No price found in OCR text for bill ${bill._id}, user can correct manually`);
+          }
+        } else {
+          const errorMsg = ocrResult?.ErrorMessage?.[0] || 'Unknown OCR error';
+          logger.warn(`[OCR] ❌ OCR failed for bill ${bill._id}: ${errorMsg}`);
+          bill.status = 'extracted'; // Don't block — let user correct
+          bill.processingError = `OCR processing failed: ${errorMsg}`;
+          bill.ocrProvider = 'ocr_space';
+        }
+
+        await bill.save();
+      } catch (ocrError: any) {
+        // OCR failure should NOT block the bill upload
+        logger.error(`[OCR] Exception during OCR for bill ${bill._id}: ${ocrError.message}`);
+        bill.status = 'extracted';
+        bill.processingError = `OCR exception: ${ocrError.message}`;
+        await bill.save();
+      }
+
+      // Return complete bill with extracted data
+      const completeBill = await Bill.findById(bill._id).populate('user', 'displayName email').lean();
+
+      ApiResponseHelper.created(res, completeBill, 'Bill uploaded and processed.');
     } catch (error) {
       next(error);
     }
