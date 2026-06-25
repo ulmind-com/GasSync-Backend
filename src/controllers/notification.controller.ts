@@ -117,4 +117,24 @@ export class NotificationController {
       next(error);
     }
   }
+
+  /**
+   * @swagger
+   * /api/v1/notifications/{id}:
+   *   delete:
+   *     summary: Delete a notification
+   *     tags: [Notifications]
+   *     security:
+   *       - bearerAuth: []
+   */
+  static async deleteNotification(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      const { id } = req.params;
+      await Notification.findOneAndDelete({ _id: id, user: userId });
+      ApiResponseHelper.success(res, null, 'Notification deleted');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
