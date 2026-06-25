@@ -745,4 +745,42 @@ export class AuthController {
       next(error);
     }
   }
+  /**
+   * @swagger
+   * /api/v1/auth/me/push-token:
+   *   put:
+   *     summary: Register Expo push token for notifications
+   *     tags: [Auth]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - token
+   *             properties:
+   *               token:
+   *                 type: string
+   *                 example: ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]
+   */
+  static async registerPushToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = (req as any).user?.userId;
+      const { token } = req.body;
+
+      if (!token) {
+        throw new BadRequestError('Push token is required');
+      }
+
+      await User.findByIdAndUpdate(userId, { expoPushToken: token });
+
+      logger.info(`[Push] Registered push token for user ${userId}`);
+      ApiResponseHelper.success(res, null, 'Push token registered successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
 }

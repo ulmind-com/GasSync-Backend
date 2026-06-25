@@ -66,5 +66,6 @@ router.put('/me', authenticate, AuthController.updateMe);
 router.post('/avatar', authenticate, uploadAvatarImage, AuthController.uploadAvatar);
 router.post('/change-password', authenticate, validate(changePasswordValidation), AuthController.changePassword);
 router.post('/me/favorites/toggle', authenticate, AuthController.toggleFavorite);
+router.put('/me/push-token', authenticate, AuthController.registerPushToken);
 
 export default router;

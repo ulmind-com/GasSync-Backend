@@ -18,6 +18,7 @@ import { swaggerSpec } from './config/swagger';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
 import { seedDatabase } from './utils/seeder';
+import { initNotificationJobs } from './jobs/notification.jobs';
 
 // Import routes
 import authRoutes from './routes/auth.routes';
@@ -177,6 +178,9 @@ async function startServer(): Promise<void> {
 
     // Seed database (runs once — skips if data already exists)
     await seedDatabase();
+
+    // Initialize notification cron jobs
+    initNotificationJobs();
 
     // Start listening
     app.listen(config.port, () => {

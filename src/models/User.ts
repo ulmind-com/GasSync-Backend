@@ -20,6 +20,7 @@ export interface IUser extends Document {
   resetPasswordOTP?: string;
   resetPasswordExpire?: Date;
   refreshToken?: string;
+  expoPushToken?: string;
   lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -122,6 +123,10 @@ const userSchema = new Schema<IUser>(
     refreshToken: {
       type: String,
       select: false,
+    },
+    expoPushToken: {
+      type: String,
+      default: null,
     },
     lastLoginAt: {
       type: Date,

@@ -9,9 +9,11 @@ import axios from 'axios';
 import Bill from '../models/Bill';
 import GasPrice from '../models/GasPrice';
 import GasStation from '../models/GasStation';
+import User from '../models/User';
 import { ApiResponseHelper } from '../utils/apiResponse';
 import { BadRequestError, NotFoundError, ForbiddenError } from '../utils/errors';
 import { logger } from '../utils/logger';
+import { sendPushNotification } from '../utils/pushNotification';
 
 export class BillController {
   /**
@@ -702,6 +704,24 @@ Example output:
       }
 
       await bill.save();
+
+      // Send push notification to bill owner when someone votes helpful (not on undo)
+      if (helpfulIndex === -1 && bill.user.toString() !== userId) {
+        try {
+          const billOwner = await User.findById(bill.user);
+          if (billOwner?.expoPushToken) {
+            const voter = await User.findById(userId).select('displayName');
+            await sendPushNotification({
+              token: billOwner.expoPushToken,
+              title: '👍 Someone found your report helpful!',
+              body: `${voter?.displayName || 'A user'} found your gas price report helpful.`,
+              data: { type: 'helpful_vote', billId: bill._id.toString() },
+            });
+          }
+        } catch (pushErr) {
+          logger.warn('[Push] Failed to send helpful notification:', pushErr);
+        }
+      }
 
       ApiResponseHelper.success(res, {
         helpfulCount: bill.helpfulUsers.length,
