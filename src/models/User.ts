@@ -21,6 +21,7 @@ export interface IUser extends Document {
   resetPasswordExpire?: Date;
   refreshToken?: string;
   expoPushToken?: string;
+  pushNotificationsEnabled: boolean;
   lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -128,6 +129,10 @@ const userSchema = new Schema<IUser>(
       type: String,
       default: null,
     },
+    pushNotificationsEnabled: {
+      type: Boolean,
+      default: true,
+    },
     lastLoginAt: {
       type: Date,
       default: null,
@@ -165,6 +170,8 @@ userSchema.methods.toPublicJSON = function (): Record<string, any> {
     avatarUrl: this.avatarUrl,
     phone: this.phone,
     preferredFuelType: this.preferredFuelType,
+    expoPushToken: this.expoPushToken,
+    pushNotificationsEnabled: this.pushNotificationsEnabled,
     defaultZipCode: this.defaultZipCode,
     defaultState: this.defaultState,
     role: this.role,

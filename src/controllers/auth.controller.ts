@@ -476,7 +476,7 @@ export class AuthController {
    */
   static async updateMe(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const allowedFields = ['displayName', 'phone', 'preferredFuelType', 'defaultZipCode', 'defaultState', 'avatarUrl'];
+      const allowedFields = ['displayName', 'phone', 'preferredFuelType', 'defaultZipCode', 'defaultState', 'avatarUrl', 'pushNotificationsEnabled'];
       const updates: Record<string, any> = {};
 
       for (const field of allowedFields) {
