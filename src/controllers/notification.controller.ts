@@ -30,7 +30,7 @@ export class NotificationController {
    */
   static async getNotifications(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any).userId;
       const page = parseInt(req.query.page as string) || 1;
       const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
       const skip = (page - 1) * limit;
@@ -71,7 +71,7 @@ export class NotificationController {
    */
   static async getUnreadCount(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any).userId;
       const count = await Notification.countDocuments({ user: userId, isRead: false });
       ApiResponseHelper.success(res, { unreadCount: count }, 'Unread count retrieved');
     } catch (error) {
@@ -90,7 +90,7 @@ export class NotificationController {
    */
   static async markAllRead(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any).userId;
       await Notification.updateMany({ user: userId, isRead: false }, { isRead: true });
       ApiResponseHelper.success(res, null, 'All notifications marked as read');
     } catch (error) {
@@ -109,7 +109,7 @@ export class NotificationController {
    */
   static async markOneRead(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any).userId;
       const { id } = req.params;
       await Notification.findOneAndUpdate({ _id: id, user: userId }, { isRead: true });
       ApiResponseHelper.success(res, null, 'Notification marked as read');
@@ -129,7 +129,7 @@ export class NotificationController {
    */
   static async deleteNotification(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any).userId;
       const { id } = req.params;
       await Notification.findOneAndDelete({ _id: id, user: userId });
       ApiResponseHelper.success(res, null, 'Notification deleted');
