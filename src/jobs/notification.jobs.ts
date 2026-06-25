@@ -6,6 +6,7 @@ import cron from 'node-cron';
 import User from '../models/User';
 import Bill from '../models/Bill';
 import { sendPushNotification, sendBulkPushNotifications } from '../utils/pushNotification';
+import Notification from '../models/Notification';
 import { logger } from '../utils/logger';
 
 /**
@@ -39,13 +40,17 @@ function scheduleInactivityReminder() {
           createdAt: { $gte: sevenDaysAgo },
         }).lean();
 
-        if (!recentBill && user.expoPushToken) {
-          payloads.push({
-            token: user.expoPushToken,
-            title: '⛽ Miss reporting gas prices?',
-            body: "It's been a week since your last upload. Help the community by sharing prices near you!",
-            data: { type: 'inactivity_reminder' },
-          });
+        if (!recentBill) {
+          const title = '⛽ Miss reporting gas prices?';
+          const body = "It's been a week since your last upload. Help the community by sharing prices near you!";
+          const data = { type: 'inactivity_reminder' };
+
+          // Save to DB for bell icon
+          await Notification.create({ user: user._id, title, body, type: 'inactivity_reminder', data });
+
+          if (user.expoPushToken) {
+            payloads.push({ token: user.expoPushToken, title, body, data });
+          }
         }
       }
 
@@ -103,13 +108,17 @@ function schedulePriceDropAlert() {
             const drop = previousPrice - latestPrice;
 
             // Alert if price dropped by at least $0.05
-            if (drop >= 0.05 && user.expoPushToken) {
-              payloads.push({
-                token: user.expoPushToken,
-                title: `📉 Price drop at ${fav.name}!`,
-                body: `Gas prices dropped by $${drop.toFixed(2)}/gal to $${latestPrice.toFixed(2)} at ${fav.name}.`,
-                data: { type: 'price_drop', stationId: fav.id, stationName: fav.name },
-              });
+            if (drop >= 0.05) {
+              const title = `📉 Price drop at ${fav.name}!`;
+              const body = `Gas prices dropped by $${drop.toFixed(2)}/gal to $${latestPrice.toFixed(2)} at ${fav.name}.`;
+              const data = { type: 'price_drop', stationId: fav.id, stationName: fav.name };
+
+              // Save to DB for bell icon
+              await Notification.create({ user: user._id, title, body, type: 'price_drop', data });
+
+              if (user.expoPushToken) {
+                payloads.push({ token: user.expoPushToken, title, body, data });
+              }
               break; // Only one notification per user per job run
             }
           }

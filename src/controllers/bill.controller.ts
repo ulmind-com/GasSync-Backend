@@ -10,6 +10,7 @@ import Bill from '../models/Bill';
 import GasPrice from '../models/GasPrice';
 import GasStation from '../models/GasStation';
 import User from '../models/User';
+import Notification from '../models/Notification';
 import { ApiResponseHelper } from '../utils/apiResponse';
 import { BadRequestError, NotFoundError, ForbiddenError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -709,13 +710,27 @@ Example output:
       if (helpfulIndex === -1 && bill.user.toString() !== userId) {
         try {
           const billOwner = await User.findById(bill.user);
+          const voter = await User.findById(userId).select('displayName');
+          const title = '👍 Someone found your report helpful!';
+          const body = `${voter?.displayName || 'A user'} found your gas price report helpful.`;
+          const notifData = { type: 'helpful_vote', billId: bill._id.toString() };
+
+          // Save to database for bell icon feed
+          await Notification.create({
+            user: bill.user,
+            title,
+            body,
+            type: 'helpful_vote',
+            data: notifData,
+          });
+
+          // Send push notification
           if (billOwner?.expoPushToken) {
-            const voter = await User.findById(userId).select('displayName');
             await sendPushNotification({
               token: billOwner.expoPushToken,
-              title: '👍 Someone found your report helpful!',
-              body: `${voter?.displayName || 'A user'} found your gas price report helpful.`,
-              data: { type: 'helpful_vote', billId: bill._id.toString() },
+              title,
+              body,
+              data: notifData,
             });
           }
         } catch (pushErr) {
