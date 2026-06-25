@@ -26,6 +26,7 @@ import gasStationRoutes from './routes/gasStation.routes';
 import gasPriceRoutes from './routes/gasPrice.routes';
 import billRoutes from './routes/bill.routes';
 import notificationRoutes from './routes/notification.routes';
+import feedbackRoutes from './routes/feedback.routes';
 
 // ============================================================
 // Initialize Express App
@@ -155,6 +156,7 @@ app.use('/api/v1/stations', gasStationRoutes);
 app.use('/api/v1/prices', gasPriceRoutes);
 app.use('/api/v1/bills', billRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/feedback', feedbackRoutes);
 
 // ============================================================
 // Root redirect to docs
