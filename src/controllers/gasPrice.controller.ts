@@ -612,4 +612,58 @@ export class GasPriceController {
       next(error);
     }
   }
+
+  /**
+   * @swagger
+   * /api/v1/prices/community/recent:
+   *   get:
+   *     summary: Get all recent community price reports (for home feed)
+   *     tags: [Gas Prices]
+   *     parameters:
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Recent community prices
+   */
+  static async getCommunityRecent(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+
+      const communityPrices = await Bill.find({
+        googlePlaceId: { $ne: null },
+        status: { $in: ['extracted', 'verified'] },
+        pricePerGallon: { $ne: null },
+      })
+        .sort({ billDate: -1 })
+        .limit(limit)
+        .populate('user', 'displayName avatarUrl')
+        .lean();
+
+      ApiResponseHelper.success(res, communityPrices.map(b => ({
+        id: b._id,
+        googlePlaceId: b.googlePlaceId,
+        stationId: b.googlePlaceId,
+        stationName: b.stationName,
+        fuelType: b.fuelType || 'regular',
+        price: b.pricePerGallon,
+        reportedBy: (b.user as any)?.displayName || 'Anonymous',
+        reportedByAvatar: (b.user as any)?.avatarUrl || null,
+        billDate: b.billDate,
+        source: 'user_bill',
+        imageUrl: b.imageUrl,
+        totalAmount: b.totalAmount,
+        totalGallons: b.totalGallons,
+        helpfulCount: b.helpfulUsers?.length || 0,
+        notHelpfulCount: b.notHelpfulUsers?.length || 0,
+        helpfulUsers: b.helpfulUsers || [],
+        notHelpfulUsers: b.notHelpfulUsers || [],
+      })), 'Recent community prices retrieved');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
