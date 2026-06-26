@@ -666,4 +666,92 @@ export class GasPriceController {
       next(error);
     }
   }
+  /**
+   * @swagger
+   * /api/v1/prices/community/nearby:
+   *   get:
+   *     summary: Get nearby community price reports (for local home feed)
+   *     tags: [Gas Prices]
+   *     parameters:
+   *       - in: query
+   *         name: lat
+   *         required: true
+   *         schema:
+   *           type: number
+   *       - in: query
+   *         name: lng
+   *         required: true
+   *         schema:
+   *           type: number
+   *       - in: query
+   *         name: radiusMiles
+   *         schema:
+   *           type: number
+   *           default: 20
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Nearby community prices
+   */
+  static async getCommunityNearby(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const lat = parseFloat(req.query.lat as string);
+      const lng = parseFloat(req.query.lng as string);
+      const radiusMiles = parseFloat(req.query.radiusMiles as string) || 20;
+      const limit = Math.min(50, parseInt(req.query.limit as string) || 20);
+
+      if (isNaN(lat) || isNaN(lng)) {
+        throw new BadRequestError('Valid lat and lng query parameters are required');
+      }
+
+      // Convert miles to meters for MongoDB $nearSphere (1 mile = 1609.34 meters)
+      const maxDistance = radiusMiles * 1609.34;
+
+      const communityPrices = await Bill.find({
+        location: {
+          $nearSphere: {
+            $geometry: {
+              type: 'Point',
+              coordinates: [lng, lat],
+            },
+            $maxDistance: maxDistance,
+          }
+        },
+        status: { $in: ['extracted', 'verified'] },
+        pricePerGallon: { $ne: null },
+      })
+        .limit(limit)
+        .populate('user', 'displayName avatarUrl')
+        .lean();
+
+      // Ensure they are sorted by billDate (MongoDB $nearSphere forces distance sort, we can sort after if we want, or rely on distance)
+      const sortedByDate = communityPrices.sort((a: any, b: any) => new Date(b.billDate || 0).getTime() - new Date(a.billDate || 0).getTime());
+
+      ApiResponseHelper.success(res, sortedByDate.map(b => ({
+        id: b._id,
+        googlePlaceId: b.googlePlaceId,
+        stationId: b.googlePlaceId,
+        stationName: b.stationName,
+        fuelType: b.fuelType || 'regular',
+        price: b.pricePerGallon,
+        reportedBy: (b.user as any)?.displayName || 'Anonymous',
+        reportedByAvatar: (b.user as any)?.avatarUrl || null,
+        billDate: b.billDate,
+        source: 'user_bill',
+        imageUrl: b.imageUrl,
+        totalAmount: b.totalAmount,
+        totalGallons: b.totalGallons,
+        helpfulCount: b.helpfulUsers?.length || 0,
+        notHelpfulCount: b.notHelpfulUsers?.length || 0,
+        helpfulUsers: b.helpfulUsers || [],
+        notHelpfulUsers: b.notHelpfulUsers || [],
+      })), 'Nearby community prices retrieved');
+    } catch (error) {
+      next(error);
+    }
+  }
 }

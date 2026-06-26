@@ -42,6 +42,12 @@ export interface IBill extends Document {
   helpfulUsers: mongoose.Types.ObjectId[];
   notHelpfulUsers: mongoose.Types.ObjectId[];
 
+  // Geo-location for spatial queries
+  location?: {
+    type: string;
+    coordinates: number[]; // [longitude, latitude]
+  };
+
   // Notes
   notes?: string;
 
@@ -172,6 +178,18 @@ const billSchema = new Schema<IBill>(
       },
     ],
 
+    location: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point',
+      },
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: undefined,
+      },
+    },
+
     notes: {
       type: String,
       maxlength: 500,
@@ -189,6 +207,7 @@ billSchema.index({ user: 1, createdAt: -1 });
 billSchema.index({ user: 1, billDate: -1 });
 billSchema.index({ user: 1, status: 1 });
 billSchema.index({ station: 1, billDate: -1 });
+billSchema.index({ location: '2dsphere' });
 
 const Bill: Model<IBill> = mongoose.model<IBill>('Bill', billSchema);
 export default Bill;
