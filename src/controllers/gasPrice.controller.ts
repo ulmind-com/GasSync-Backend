@@ -448,92 +448,7 @@ export class GasPriceController {
         throw new BadRequestError('Google Place ID is required');
       }
 
-      // 1. Check cache first
-      const cached = await StationPriceCache.findOne({ googlePlaceId }).lean();
-      if (cached) {
-        logger.info(`Cache HIT for station: ${googlePlaceId}`);
-
-        // Also fetch community prices (from user bills)
-        const communityPrices = await Bill.find({
-          googlePlaceId,
-          status: { $in: ['extracted', 'verified'] },
-          pricePerGallon: { $ne: null },
-        })
-          .sort({ billDate: -1 })
-          .limit(10)
-          .populate('user', 'displayName avatarUrl')
-          .lean();
-
-        ApiResponseHelper.success(res, {
-          source: 'cache',
-          stationName: cached.stationName,
-          fuelPrices: cached.fuelPrices,
-          fetchedAt: cached.fetchedAt,
-          communityPrices: communityPrices.map(b => ({
-            id: b._id,
-            fuelType: b.fuelType || 'regular',
-            price: b.pricePerGallon,
-            reportedBy: (b.user as any)?.displayName || 'Anonymous',
-            reportedByAvatar: (b.user as any)?.avatarUrl || null,
-            billDate: b.billDate,
-            source: 'user_bill',
-            imageUrl: b.imageUrl,
-            totalAmount: b.totalAmount,
-            totalGallons: b.totalGallons,
-            helpfulCount: b.helpfulUsers?.length || 0,
-            notHelpfulCount: b.notHelpfulUsers?.length || 0,
-            helpfulUsers: b.helpfulUsers || [],
-            notHelpfulUsers: b.notHelpfulUsers || [],
-          })),
-        }, 'Station prices retrieved (cached)');
-        return;
-      }
-
-      // 2. Cache MISS — fetch from Google Places API (New)
-      logger.info(`Cache MISS for station: ${googlePlaceId} — fetching from Google`);
-
-      const googleRes = await axios.get(
-        `https://places.googleapis.com/v1/places/${googlePlaceId}`,
-        {
-          headers: {
-            'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
-            'X-Goog-FieldMask': 'displayName,fuelOptions',
-          },
-          timeout: 10000,
-        }
-      );
-
-      const placeData = googleRes.data;
-      const fuelOptions = placeData?.fuelOptions?.fuelPrices || [];
-      const stationName = placeData?.displayName?.text || '';
-
-      // Normalize fuel prices
-      const normalizedPrices = fuelOptions.map((fp: any) => ({
-        type: fp.type || 'UNKNOWN',
-        price: fp.price?.units
-          ? parseFloat(`${fp.price.units}.${(fp.price.nanos || 0).toString().padStart(9, '0').slice(0, 2)}`)
-          : 0,
-        currencyCode: fp.price?.currencyCode || 'USD',
-        updateTime: fp.updateTime ? new Date(fp.updateTime) : new Date(),
-      }));
-
-      // 3. Save to cache (upsert)
-      const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000);
-      await StationPriceCache.findOneAndUpdate(
-        { googlePlaceId },
-        {
-          googlePlaceId,
-          stationName,
-          fuelPrices: normalizedPrices,
-          fetchedAt: new Date(),
-          expiresAt,
-        },
-        { upsert: true, new: true }
-      );
-
-      logger.info(`Cached ${normalizedPrices.length} fuel prices for: ${stationName || googlePlaceId}`);
-
-      // Also fetch community prices
+      // ─── ALWAYS fetch community prices from DB (independent of cache/Google) ───
       const communityPrices = await Bill.find({
         googlePlaceId,
         status: { $in: ['extracted', 'verified'] },
@@ -544,67 +459,95 @@ export class GasPriceController {
         .populate('user', 'displayName avatarUrl')
         .lean();
 
-      ApiResponseHelper.success(res, {
-        source: 'google',
-        stationName,
-        fuelPrices: normalizedPrices,
-        fetchedAt: new Date(),
-        communityPrices: communityPrices.map(b => ({
-          id: b._id,
-          fuelType: b.fuelType || 'regular',
-          price: b.pricePerGallon,
-          reportedBy: (b.user as any)?.displayName || 'Anonymous',
-          reportedByAvatar: (b.user as any)?.avatarUrl || null,
-          billDate: b.billDate,
-          source: 'user_bill',
-          imageUrl: b.imageUrl,
-          totalAmount: b.totalAmount,
-          totalGallons: b.totalGallons,
-          helpfulCount: b.helpfulUsers?.length || 0,
-          notHelpfulCount: b.notHelpfulUsers?.length || 0,
-          helpfulUsers: b.helpfulUsers || [],
-          notHelpfulUsers: b.notHelpfulUsers || [],
-        })),
-      }, 'Station prices retrieved (fresh)');
-    } catch (error: any) {
-      // If Google API fails, still try to return community prices
-      if (error?.response?.status) {
-        logger.warn(`Google Places API error for ${req.params.googlePlaceId}: ${error.response.status}`);
-        
-        const communityPrices = await Bill.find({
-          googlePlaceId: req.params.googlePlaceId,
-          status: { $in: ['extracted', 'verified'] },
-          pricePerGallon: { $ne: null },
-        })
-          .sort({ billDate: -1 })
-          .limit(10)
-          .populate('user', 'displayName avatarUrl')
-          .lean();
+      logger.info(`[by-place] ${googlePlaceId} — found ${communityPrices.length} community prices`);
 
-        ApiResponseHelper.success(res, {
-          source: 'community_only',
-          stationName: '',
-          fuelPrices: [],
-          fetchedAt: null,
-          communityPrices: communityPrices.map(b => ({
-            id: b._id,
-            fuelType: b.fuelType || 'regular',
-            price: b.pricePerGallon,
-            reportedBy: (b.user as any)?.displayName || 'Anonymous',
-            reportedByAvatar: (b.user as any)?.avatarUrl || null,
-            billDate: b.billDate,
-            source: 'user_bill',
-            imageUrl: b.imageUrl,
-            totalAmount: b.totalAmount,
-            totalGallons: b.totalGallons,
-            helpfulCount: b.helpfulUsers?.length || 0,
-            notHelpfulCount: b.notHelpfulUsers?.length || 0,
-            helpfulUsers: b.helpfulUsers || [],
-            notHelpfulUsers: b.notHelpfulUsers || [],
-          })),
-        }, 'Only community prices available');
-        return;
+      const mappedCommunity = communityPrices.map(b => ({
+        id: b._id,
+        fuelType: b.fuelType || 'regular',
+        price: b.pricePerGallon,
+        reportedBy: (b.user as any)?.displayName || 'Anonymous',
+        reportedByAvatar: (b.user as any)?.avatarUrl || null,
+        billDate: b.billDate,
+        source: 'user_bill',
+        imageUrl: b.imageUrl,
+        totalAmount: b.totalAmount,
+        totalGallons: b.totalGallons,
+        helpfulCount: b.helpfulUsers?.length || 0,
+        notHelpfulCount: b.notHelpfulUsers?.length || 0,
+        helpfulUsers: b.helpfulUsers || [],
+        notHelpfulUsers: b.notHelpfulUsers || [],
+      }));
+
+      // ─── Fuel prices: check 24hr cache, else fetch from Google ───
+      let fuelPrices: any[] = [];
+      let stationName = '';
+      let source = 'none';
+      let fetchedAt: Date | null = null;
+
+      const cached = await StationPriceCache.findOne({ googlePlaceId }).lean();
+
+      if (cached && cached.fuelPrices.length > 0) {
+        // Cache HIT — use cached Google fuel prices
+        logger.info(`[by-place] Cache HIT for fuel prices: ${googlePlaceId}`);
+        fuelPrices = cached.fuelPrices;
+        stationName = cached.stationName;
+        source = 'cache';
+        fetchedAt = cached.fetchedAt;
+      } else {
+        // Cache MISS — fetch fresh from Google
+        try {
+          logger.info(`[by-place] Cache MISS for fuel prices: ${googlePlaceId} — fetching from Google`);
+
+          const googleRes = await axios.get(
+            `https://places.googleapis.com/v1/places/${googlePlaceId}`,
+            {
+              headers: {
+                'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+                'X-Goog-FieldMask': 'displayName,fuelOptions',
+              },
+              timeout: 10000,
+            }
+          );
+
+          const placeData = googleRes.data;
+          const fuelOptions = placeData?.fuelOptions?.fuelPrices || [];
+          stationName = placeData?.displayName?.text || '';
+
+          fuelPrices = fuelOptions.map((fp: any) => ({
+            type: fp.type || 'UNKNOWN',
+            price: fp.price?.units
+              ? parseFloat(`${fp.price.units}.${(fp.price.nanos || 0).toString().padStart(9, '0').slice(0, 2)}`)
+              : 0,
+            currencyCode: fp.price?.currencyCode || 'USD',
+            updateTime: fp.updateTime ? new Date(fp.updateTime) : new Date(),
+          }));
+
+          // Save to cache (24hr TTL)
+          const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000);
+          await StationPriceCache.findOneAndUpdate(
+            { googlePlaceId },
+            { googlePlaceId, stationName, fuelPrices, fetchedAt: new Date(), expiresAt },
+            { upsert: true, new: true }
+          );
+
+          source = 'google';
+          fetchedAt = new Date();
+          logger.info(`[by-place] Cached ${fuelPrices.length} fuel prices for: ${stationName || googlePlaceId}`);
+        } catch (googleError: any) {
+          logger.warn(`[by-place] Google API failed for ${googlePlaceId}: ${googleError?.message || 'unknown'}`);
+          source = 'community_only';
+        }
       }
+
+      // ─── Return both fuel prices + community prices ───
+      ApiResponseHelper.success(res, {
+        source,
+        stationName,
+        fuelPrices,
+        fetchedAt,
+        communityPrices: mappedCommunity,
+      }, `Station prices retrieved (${source}, ${mappedCommunity.length} community)`);
+    } catch (error) {
       next(error);
     }
   }
