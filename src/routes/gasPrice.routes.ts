@@ -28,6 +28,7 @@ router.get('/compare', GasPriceController.comparePrices);
 router.get('/national-average', GasPriceController.getNationalAverage);
 router.get('/by-place/:googlePlaceId', GasPriceController.getStationPricesByPlaceId);
 router.get('/station/:stationId', GasPriceController.getStationPrices);
+router.post('/community/by-places', GasPriceController.getCommunityPricesByPlaceIds);
 
 // Protected routes
 router.post('/', authenticate, validate(reportPriceValidation), GasPriceController.reportPrice);

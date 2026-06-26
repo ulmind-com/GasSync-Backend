@@ -450,7 +450,7 @@ export class GasPriceController {
 
       // 1. Check cache first
       const cached = await StationPriceCache.findOne({ googlePlaceId }).lean();
-      if (cached && cached.fuelPrices.length > 0) {
+      if (cached) {
         logger.info(`Cache HIT for station: ${googlePlaceId}`);
 
         // Also fetch community prices (from user bills)
@@ -536,7 +536,7 @@ export class GasPriceController {
       // Also fetch community prices
       const communityPrices = await Bill.find({
         googlePlaceId,
-        status: 'verified',
+        status: { $in: ['extracted', 'verified'] },
         pricePerGallon: { $ne: null },
       })
         .sort({ billDate: -1 })
@@ -573,7 +573,7 @@ export class GasPriceController {
         
         const communityPrices = await Bill.find({
           googlePlaceId: req.params.googlePlaceId,
-          status: 'verified',
+          status: { $in: ['extracted', 'verified'] },
           pricePerGallon: { $ne: null },
         })
           .sort({ billDate: -1 })
@@ -605,6 +605,67 @@ export class GasPriceController {
         }, 'Only community prices available');
         return;
       }
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/v1/prices/community/by-places:
+   *   post:
+   *     summary: Get community prices for multiple stations efficiently
+   *     tags: [Gas Prices]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               placeIds:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *     responses:
+   *       200:
+   *         description: Community prices retrieved
+   */
+  static async getCommunityPricesByPlaceIds(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { placeIds } = req.body;
+      if (!Array.isArray(placeIds)) {
+        throw new BadRequestError('placeIds must be an array');
+      }
+
+      const communityPrices = await Bill.find({
+        googlePlaceId: { $in: placeIds },
+        status: { $in: ['extracted', 'verified'] },
+        pricePerGallon: { $ne: null },
+      })
+        .sort({ billDate: -1 })
+        .populate('user', 'displayName avatarUrl')
+        .lean();
+
+      ApiResponseHelper.success(res, communityPrices.map(b => ({
+        id: b._id,
+        googlePlaceId: b.googlePlaceId,
+        stationId: b.googlePlaceId, // for frontend compatibility
+        stationName: b.stationName,
+        fuelType: b.fuelType || 'regular',
+        price: b.pricePerGallon,
+        reportedBy: (b.user as any)?.displayName || 'Anonymous',
+        reportedByAvatar: (b.user as any)?.avatarUrl || null,
+        billDate: b.billDate,
+        source: 'user_bill',
+        imageUrl: b.imageUrl,
+        totalAmount: b.totalAmount,
+        totalGallons: b.totalGallons,
+        helpfulCount: b.helpfulUsers?.length || 0,
+        notHelpfulCount: b.notHelpfulUsers?.length || 0,
+        helpfulUsers: b.helpfulUsers || [],
+        notHelpfulUsers: b.notHelpfulUsers || [],
+      })), 'Community prices retrieved');
+    } catch (error) {
       next(error);
     }
   }
