@@ -768,7 +768,7 @@ export class AuthController {
    */
   static async registerPushToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const userId = (req as any).user?.userId;
+      const userId = (req as any).userId;
       const { token } = req.body;
 
       if (!token) {
