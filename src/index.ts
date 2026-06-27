@@ -42,8 +42,9 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
-// CORS — allow the configured origins (CORS_ORIGINS env), any localhost, and
-// any *.vercel.app deploy (preview URLs change), plus non-browser callers.
+// CORS — allow the configured origins (CORS_ORIGINS env), any localhost, the
+// production domain (thegassync.com + subdomains), and any *.vercel.app deploy
+// (preview URLs change), plus non-browser callers.
 const allowedOrigins = config.cors.origin;
 app.use(cors({
   origin: (origin, callback) => {
@@ -51,7 +52,8 @@ app.use(cors({
       !origin ||
       allowedOrigins.includes(origin) ||
       /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
-      /\.vercel\.app$/.test(origin)
+      /\.vercel\.app$/.test(origin) ||
+      /^https:\/\/([a-z0-9-]+\.)*thegassync\.com$/.test(origin)
     ) {
       return callback(null, true);
     }
