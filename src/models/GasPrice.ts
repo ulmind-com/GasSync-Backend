@@ -35,7 +35,7 @@ const gasPriceSchema = new Schema<IGasPrice>(
     },
     fuelType: {
       type: String,
-      enum: ['regular', 'midgrade', 'premium', 'diesel'],
+      enum: ['regular', 'midgrade', 'premium', 'diesel', 'e85', 'unl88'],
       required: [true, 'Fuel type is required'],
       index: true,
     },
