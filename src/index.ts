@@ -56,6 +56,10 @@ const limiter = rateLimit({
   max: config.rateLimit.max,
   standardHeaders: true,
   legacyHeaders: false,
+  // Don't count read requests — the app fires many GETs per screen (prices,
+  // community, notifications), which would otherwise burn the budget and
+  // wrongly 429 normal flows like logging back in. Only writes are limited.
+  skip: (req) => req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS',
   message: {
     success: false,
     message: 'Too many requests, please try again later',
