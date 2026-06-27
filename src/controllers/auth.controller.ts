@@ -6,6 +6,10 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../config';
 import User from '../models/User';
+import Bill from '../models/Bill';
+import Notification from '../models/Notification';
+import Feedback from '../models/Feedback';
+import GasPrice from '../models/GasPrice';
 import { ApiResponseHelper } from '../utils/apiResponse';
 import { BadRequestError, UnauthorizedError, ConflictError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -449,6 +453,42 @@ export class AuthController {
 
       ApiResponseHelper.success(res, null, 'Logged out successfully');
     } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Permanently delete the authenticated user's account and ALL associated data.
+   */
+  static async deleteAccount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.userId;
+      if (!userId) {
+        throw new UnauthorizedError('Not authenticated');
+      }
+
+      await Promise.all([
+        // Content created by the user (their bill uploads / community posts)
+        Bill.deleteMany({ user: userId }),
+        // Their votes left on other users' bills
+        Bill.updateMany(
+          {},
+          { $pull: { helpfulUsers: userId, notHelpfulUsers: userId } }
+        ),
+        // Their notifications and feedback
+        Notification.deleteMany({ user: userId }),
+        Feedback.deleteMany({ userId }),
+        // Anonymise shared price data they reported (keep the price, drop the link)
+        GasPrice.updateMany({ reportedBy: userId }, { $unset: { reportedBy: '' } }),
+      ]);
+
+      // Finally remove the user document itself
+      await User.findByIdAndDelete(userId);
+
+      logger.info(`Account and all associated data deleted for user: ${userId}`);
+      ApiResponseHelper.success(res, null, 'Account deleted successfully');
+    } catch (error) {
+      logger.error('Delete Account Error:', error);
       next(error);
     }
   }

@@ -61,6 +61,7 @@ router.post('/reset-password', body('email').isEmail().normalizeEmail(), body('o
 
 // Protected routes
 router.post('/logout', authenticate, AuthController.logout);
+router.delete('/account', authenticate, AuthController.deleteAccount);
 router.get('/me', authenticate, AuthController.getMe);
 router.put('/me', authenticate, AuthController.updateMe);
 router.post('/avatar', authenticate, uploadAvatarImage, AuthController.uploadAvatar);
