@@ -21,6 +21,12 @@ const GOOGLE_WEB_CLIENT_ID =
   process.env.GOOGLE_WEB_CLIENT_ID ||
   '143816392628-6cb8kiu12bmd20241kc1tsuhkjasslab.apps.googleusercontent.com';
 
+// Web client of the Firebase project (gassync-fb003) used by the mobile app.
+// Mobile idTokens carry this as their audience, so it must be accepted here.
+const GOOGLE_MOBILE_WEB_CLIENT_ID =
+  process.env.GOOGLE_MOBILE_WEB_CLIENT_ID ||
+  '47142357083-kpmt996tdi6c038ij601ec9bfvf2ob9d.apps.googleusercontent.com';
+
 /**
  * Generate JWT tokens
  */
@@ -277,6 +283,7 @@ export class AuthController {
           idToken,
           audience: [
             GOOGLE_WEB_CLIENT_ID,
+            GOOGLE_MOBILE_WEB_CLIENT_ID,
             process.env.GOOGLE_IOS_CLIENT_ID || '',
             process.env.GOOGLE_ANDROID_CLIENT_ID || '',
           ].filter(Boolean),
