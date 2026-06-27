@@ -53,7 +53,7 @@ router.post('/send-otp', body('email').isEmail().normalizeEmail().withMessage('V
 router.post('/verify-otp', body('email').isEmail().normalizeEmail(), body('otp').notEmpty(), validate([]), AuthController.verifyOTPHandler);
 router.post('/register', validate(registerValidation), AuthController.register);
 router.post('/login', validate(loginValidation), AuthController.login);
-router.post('/google', body('idToken').notEmpty().withMessage('idToken is required'), validate([]), AuthController.googleLogin);
+router.post('/google', AuthController.googleLogin);
 router.post('/refresh', AuthController.refreshToken);
 router.post('/forgot-password', body('email').isEmail().normalizeEmail().withMessage('Valid email is required'), validate([]), AuthController.forgotPassword);
 router.post('/verify-reset-otp', body('email').isEmail().normalizeEmail(), body('otp').notEmpty(), validate([]), AuthController.verifyResetOTP);

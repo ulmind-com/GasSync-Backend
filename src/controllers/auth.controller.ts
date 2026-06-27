@@ -15,6 +15,12 @@ import { OAuth2Client } from 'google-auth-library';
 
 const googleClient = new OAuth2Client();
 
+// Public OAuth client ID (safe to ship). Used as a fallback so token
+// verification still works even if the env var isn't set on the host.
+const GOOGLE_WEB_CLIENT_ID =
+  process.env.GOOGLE_WEB_CLIENT_ID ||
+  '143816392628-6cb8kiu12bmd20241kc1tsuhkjasslab.apps.googleusercontent.com';
+
 /**
  * Generate JWT tokens
  */
@@ -259,27 +265,56 @@ export class AuthController {
 
   static async googleLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { idToken } = req.body;
-      if (!idToken) throw new BadRequestError('idToken is required');
+      const { idToken, accessToken: googleAccessToken } = req.body;
 
-      // Verify the Google ID Token
-      const ticket = await googleClient.verifyIdToken({
-        idToken,
-        audience: [
-          process.env.GOOGLE_WEB_CLIENT_ID || '',
-          process.env.GOOGLE_IOS_CLIENT_ID || '',
-          process.env.GOOGLE_ANDROID_CLIENT_ID || '',
-        ].filter(Boolean),
-      });
+      let email: string;
+      let displayName: string;
+      let avatarUrl: string | undefined;
 
-      const payload = ticket.getPayload();
-      if (!payload || !payload.email) {
-        throw new UnauthorizedError('Invalid Google token');
+      if (idToken) {
+        // Native apps (mobile) and GSI send a signed ID token (JWT) we can verify.
+        const ticket = await googleClient.verifyIdToken({
+          idToken,
+          audience: [
+            GOOGLE_WEB_CLIENT_ID,
+            process.env.GOOGLE_IOS_CLIENT_ID || '',
+            process.env.GOOGLE_ANDROID_CLIENT_ID || '',
+          ].filter(Boolean),
+        });
+
+        const payload = ticket.getPayload();
+        if (!payload || !payload.email) {
+          throw new UnauthorizedError('Invalid Google token');
+        }
+
+        email = payload.email.toLowerCase();
+        displayName = payload.name || 'Google User';
+        avatarUrl = payload.picture;
+      } else if (googleAccessToken) {
+        // Web implicit flow (@react-oauth/google useGoogleLogin) yields an OAuth
+        // access token, not an ID token. Use it to fetch the verified profile.
+        const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${googleAccessToken}` },
+        });
+        if (!profileRes.ok) {
+          throw new UnauthorizedError('Invalid Google token');
+        }
+        const profile = (await profileRes.json()) as {
+          email?: string;
+          email_verified?: boolean | string;
+          name?: string;
+          picture?: string;
+        };
+        if (!profile.email) {
+          throw new UnauthorizedError('Invalid Google token');
+        }
+
+        email = profile.email.toLowerCase();
+        displayName = profile.name || 'Google User';
+        avatarUrl = profile.picture;
+      } else {
+        throw new BadRequestError('idToken or accessToken is required');
       }
-
-      const email = payload.email.toLowerCase();
-      const displayName = payload.name || 'Google User';
-      const avatarUrl = payload.picture;
 
       // Find if user already exists
       let user = await User.findOne({ email });
