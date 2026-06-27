@@ -63,6 +63,12 @@ export class BillController {
       // Cloudinary stores the file and gives us a URL in req.file.path
       const imageUrl = req.file.path || `/uploads/bills/${req.file.filename}`;
 
+      // Optional geo-tag from the device. Only set a valid GeoJSON Point;
+      // anything incomplete is dropped by the model's pre-save hook.
+      const lat = parseFloat(req.body.lat);
+      const lng = parseFloat(req.body.lng);
+      const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+
       const bill = new Bill({
         user: req.userId,
         imageUrl,
@@ -72,6 +78,7 @@ export class BillController {
         notes: req.body.notes || null,
         billDate: new Date(),
         status: 'processing',
+        location: hasCoords ? { type: 'Point', coordinates: [lng, lat] } : undefined,
       });
 
       await bill.save();

@@ -182,7 +182,6 @@ const billSchema = new Schema<IBill>(
       type: {
         type: String,
         enum: ['Point'],
-        default: 'Point',
       },
       coordinates: {
         type: [Number], // [longitude, latitude]
@@ -208,6 +207,18 @@ billSchema.index({ user: 1, billDate: -1 });
 billSchema.index({ user: 1, status: 1 });
 billSchema.index({ station: 1, billDate: -1 });
 billSchema.index({ location: '2dsphere' });
+
+// A GeoJSON Point is only valid with a [lng, lat] coordinates array. Mongoose
+// can leave an incomplete `location` (e.g. { type: 'Point' } with no
+// coordinates) on the document, which the 2dsphere index rejects on save
+// ("Can't extract geo keys ... Point must be an array or object"). Strip any
+// incomplete location so the doc is simply left out of the geo index instead.
+billSchema.pre('save', async function () {
+  const loc = this.location;
+  if (!loc || !Array.isArray(loc.coordinates) || loc.coordinates.length !== 2) {
+    this.location = undefined;
+  }
+});
 
 const Bill: Model<IBill> = mongoose.model<IBill>('Bill', billSchema);
 export default Bill;
