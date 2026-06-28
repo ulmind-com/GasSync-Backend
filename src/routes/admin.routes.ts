@@ -17,6 +17,11 @@ router.get('/dashboard', AdminController.getDashboardStats);
 router.get('/community-posts', AdminController.getCommunityPosts);
 router.delete('/community-posts/:id', AdminController.deleteCommunityPost);
 
+// Feedback
+router.get('/feedback', AdminController.getFeedback);
+router.patch('/feedback/:id', AdminController.updateFeedbackStatus);
+router.delete('/feedback/:id', AdminController.deleteFeedback);
+
 // User Management
 router.get('/users', AdminController.getUsers);
 router.delete('/users/:id', AdminController.deleteUser);

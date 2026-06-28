@@ -5,6 +5,7 @@
 import { Request, Response } from 'express';
 import User from '../models/User';
 import GasPrice from '../models/GasPrice';
+import Feedback from '../models/Feedback';
 import { Expo, ExpoPushMessage } from 'expo-server-sdk';
 import { logger } from '../utils/logger';
 
@@ -386,6 +387,95 @@ export class AdminController {
     } catch (error) {
       logger.error('Error in AdminController.deleteCommunityPost:', error);
       res.status(500).json({ success: false, message: 'Failed to delete community post' });
+    }
+  };
+
+  /**
+   * Get paginated user feedback (with optional category/status filters)
+   */
+  static getFeedback = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 15;
+      const skip = (page - 1) * limit;
+
+      const filter: Record<string, any> = {};
+      if (req.query.category && req.query.category !== 'all') filter.category = req.query.category;
+      if (req.query.status && req.query.status !== 'all') filter.status = req.query.status;
+
+      const [feedback, total, openCount] = await Promise.all([
+        Feedback.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('userId', 'displayName email'),
+        Feedback.countDocuments(filter),
+        Feedback.countDocuments({ status: 'open' }),
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          feedback,
+          openCount,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error in AdminController.getFeedback:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch feedback' });
+    }
+  };
+
+  /**
+   * Update feedback status (open / in-progress / resolved)
+   */
+  static updateFeedbackStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!['open', 'in-progress', 'resolved'].includes(status)) {
+        res.status(400).json({ success: false, message: 'Invalid status' });
+        return;
+      }
+
+      const feedback = await Feedback.findByIdAndUpdate(id, { status }, { new: true });
+
+      if (!feedback) {
+        res.status(404).json({ success: false, message: 'Feedback not found' });
+        return;
+      }
+
+      res.json({ success: true, data: feedback, message: 'Status updated' });
+    } catch (error) {
+      logger.error('Error in AdminController.updateFeedbackStatus:', error);
+      res.status(500).json({ success: false, message: 'Failed to update feedback' });
+    }
+  };
+
+  /**
+   * Delete a feedback entry
+   */
+  static deleteFeedback = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const feedback = await Feedback.findByIdAndDelete(id);
+
+      if (!feedback) {
+        res.status(404).json({ success: false, message: 'Feedback not found' });
+        return;
+      }
+
+      res.json({ success: true, message: 'Feedback deleted successfully' });
+    } catch (error) {
+      logger.error('Error in AdminController.deleteFeedback:', error);
+      res.status(500).json({ success: false, message: 'Failed to delete feedback' });
     }
   };
 }
