@@ -12,6 +12,9 @@ const router = Router();
 // All admin routes require authentication and 'admin' role
 router.use(authenticate, authorize('admin'));
 
+// Dashboard
+router.get('/dashboard', AdminController.getDashboardStats);
+
 // User Management
 router.get('/users', AdminController.getUsers);
 router.delete('/users/:id', AdminController.deleteUser);

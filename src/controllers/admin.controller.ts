@@ -4,6 +4,7 @@
 
 import { Request, Response } from 'express';
 import User from '../models/User';
+import GasPrice from '../models/GasPrice';
 import { Expo, ExpoPushMessage } from 'expo-server-sdk';
 import { logger } from '../utils/logger';
 
@@ -208,6 +209,78 @@ export class AdminController {
     } catch (error) {
       logger.error('Error in AdminController.sendUserNotification:', error);
       res.status(500).json({ success: false, message: 'Failed to send notification' });
+    }
+  };
+
+  /**
+   * Get Dashboard Stats (OP Level)
+   */
+  static getDashboardStats = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      // User Stats
+      const [totalUsers, users24h] = await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ createdAt: { $gte: oneDayAgo } }),
+      ]);
+
+      // Community Post Stats
+      const communitySources = ['user_report', 'user_bill'];
+      const [totalPosts, posts24h] = await Promise.all([
+        GasPrice.countDocuments({ source: { $in: communitySources as any[] } }),
+        GasPrice.countDocuments({ source: { $in: communitySources as any[] }, createdAt: { $gte: oneDayAgo } }),
+      ]);
+
+      // Top Locations for Community Posts
+      const topLocations = await GasPrice.aggregate([
+        { $match: { source: { $in: communitySources }, city: { $exists: true, $ne: '' } } },
+        { 
+          $group: { 
+            _id: { city: '$city', state: '$state' }, 
+            count: { $sum: 1 } 
+          } 
+        },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+        { 
+          $project: { 
+            _id: 0, 
+            city: '$_id.city', 
+            state: '$_id.state', 
+            count: 1 
+          } 
+        }
+      ]);
+
+      // Recent Activity
+      const recentUsers = await User.find().sort({ createdAt: -1 }).limit(5).select('displayName email createdAt');
+      const recentPrices = await GasPrice.find({ source: { $in: communitySources as any[] } })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('reportedBy', 'displayName')
+        .populate('station', 'name')
+        .select('fuelType price city state createdAt reportedBy station');
+
+      res.json({
+        success: true,
+        data: {
+          metrics: {
+            totalUsers,
+            users24h,
+            totalPosts,
+            posts24h
+          },
+          topLocations,
+          recentActivity: {
+            users: recentUsers,
+            prices: recentPrices
+          }
+        }
+      });
+    } catch (error) {
+      logger.error('Error in AdminController.getDashboardStats:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch dashboard stats' });
     }
   };
 }
