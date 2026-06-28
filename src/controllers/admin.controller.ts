@@ -74,7 +74,7 @@ export class AdminController {
    */
   static broadcastNotification = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { title, body, data } = req.body;
+      const { title, body, data, imageUrl } = req.body;
 
       if (!title || !body) {
         res.status(400).json({ success: false, message: 'Title and body are required' });
@@ -90,6 +90,11 @@ export class AdminController {
       const messages: ExpoPushMessage[] = [];
       let tokenCount = 0;
 
+      const payloadData = data || { type: 'broadcast' };
+      if (imageUrl) {
+        payloadData.image = imageUrl;
+      }
+
       for (const user of users) {
         if (!Expo.isExpoPushToken(user.expoPushToken)) {
           continue;
@@ -100,7 +105,7 @@ export class AdminController {
           sound: 'default',
           title,
           body,
-          data: data || { type: 'broadcast' },
+          data: payloadData,
         });
         tokenCount++;
       }
@@ -141,7 +146,7 @@ export class AdminController {
   static sendUserNotification = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { title, body, data } = req.body;
+      const { title, body, data, imageUrl } = req.body;
 
       if (!title || !body) {
         res.status(400).json({ success: false, message: 'Title and body are required' });
@@ -165,12 +170,17 @@ export class AdminController {
         return;
       }
 
+      const payloadData = data || { type: 'direct' };
+      if (imageUrl) {
+        payloadData.image = imageUrl;
+      }
+
       const messages: ExpoPushMessage[] = [{
         to: user.expoPushToken,
         sound: 'default',
         title,
         body,
-        data: data || { type: 'direct' },
+        data: payloadData,
       }];
 
       const chunks = expo.chunkPushNotifications(messages);
