@@ -74,7 +74,8 @@ export class AdminController {
    */
   static broadcastNotification = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { title, body, data, imageUrl } = req.body;
+      const { title, body, data } = req.body;
+      const imageUrl = req.file?.path || req.body.imageUrl;
 
       if (!title || !body) {
         res.status(400).json({ success: false, message: 'Title and body are required' });
@@ -146,7 +147,8 @@ export class AdminController {
   static sendUserNotification = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { title, body, data, imageUrl } = req.body;
+      const { title, body, data } = req.body;
+      const imageUrl = req.file?.path || req.body.imageUrl;
 
       if (!title || !body) {
         res.status(400).json({ success: false, message: 'Title and body are required' });

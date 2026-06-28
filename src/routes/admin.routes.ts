@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { AdminController } from '../controllers/admin.controller';
 import { authenticate, authorize } from '../middleware/auth';
+import { uploadNotificationImage } from '../middleware/upload';
 
 const router = Router();
 
@@ -16,7 +17,8 @@ router.get('/users', AdminController.getUsers);
 router.delete('/users/:id', AdminController.deleteUser);
 
 // Notifications
-router.post('/notify/broadcast', AdminController.broadcastNotification);
-router.post('/notify/user/:id', AdminController.sendUserNotification);
+router.post('/notify/broadcast', uploadNotificationImage, AdminController.broadcastNotification);
+router.post('/notify/user/:id', uploadNotificationImage, AdminController.sendUserNotification);
 
 export default router;
+

@@ -47,6 +47,22 @@ const avatarStorage = new CloudinaryStorage({
   },
 });
 
+// Configure Multer to use Cloudinary for Notifications
+const notificationStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: async (req, file) => {
+    // Generate a unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const filename = `notification-${uniqueSuffix}`;
+
+    return {
+      folder: 'gassync/notifications',
+      format: 'png',
+      public_id: filename,
+    };
+  },
+});
+
 // File filter for images only
 const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   if (config.upload.allowedMimeTypes.includes(file.mimetype)) {
@@ -74,8 +90,20 @@ export const uploadAvatar = multer({
   fileFilter,
 });
 
+// Initialize multer for notifications
+export const uploadNotification = multer({
+  storage: notificationStorage,
+  limits: {
+    fileSize: config.upload.maxFileSize,
+  },
+  fileFilter,
+});
+
 // Single bill image upload
 export const uploadBillImage = upload.single('billImage');
 
 // Single avatar image upload
 export const uploadAvatarImage = uploadAvatar.single('avatar');
+
+// Single notification image upload
+export const uploadNotificationImage = uploadNotification.single('image');
