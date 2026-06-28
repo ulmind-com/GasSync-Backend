@@ -260,6 +260,42 @@ export class AdminController {
         },
       ]);
 
+      // 14-day activity trend (posts + new users per day) for the dashboard chart.
+      const DAYS = 14;
+      const startWindow = new Date();
+      startWindow.setUTCHours(0, 0, 0, 0);
+      startWindow.setUTCDate(startWindow.getUTCDate() - (DAYS - 1));
+
+      const dayBucket = {
+        $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' },
+      };
+
+      const [postsByDay, usersByDay] = await Promise.all([
+        GasPrice.aggregate([
+          { $match: { source: { $in: communitySources }, createdAt: { $gte: startWindow } } },
+          { $group: { _id: dayBucket, count: { $sum: 1 } } },
+        ]),
+        User.aggregate([
+          { $match: { createdAt: { $gte: startWindow } } },
+          { $group: { _id: dayBucket, count: { $sum: 1 } } },
+        ]),
+      ]);
+
+      const postsMap = new Map(postsByDay.map((d: any) => [d._id, d.count]));
+      const usersMap = new Map(usersByDay.map((d: any) => [d._id, d.count]));
+
+      const trend: Array<{ date: string; posts: number; users: number }> = [];
+      for (let i = 0; i < DAYS; i++) {
+        const d = new Date(startWindow);
+        d.setUTCDate(startWindow.getUTCDate() + i);
+        const key = d.toISOString().slice(0, 10);
+        trend.push({
+          date: key,
+          posts: postsMap.get(key) || 0,
+          users: usersMap.get(key) || 0,
+        });
+      }
+
       // Recent Activity
       const recentUsers = await User.find().sort({ createdAt: -1 }).limit(5).select('displayName email createdAt');
       const recentPrices = await GasPrice.find({ source: { $in: communitySources as any[] } })
@@ -279,6 +315,7 @@ export class AdminController {
             posts24h
           },
           topLocations,
+          trend,
           recentActivity: {
             users: recentUsers,
             prices: recentPrices
