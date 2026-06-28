@@ -283,4 +283,44 @@ export class AdminController {
       res.status(500).json({ success: false, message: 'Failed to fetch dashboard stats' });
     }
   };
+
+  /**
+   * Get paginated community posts
+   */
+  static getCommunityPosts = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const skip = (page - 1) * limit;
+
+      const communitySources = ['user_report', 'user_bill'];
+      const query = { source: { $in: communitySources as any[] } };
+
+      const [posts, total] = await Promise.all([
+        GasPrice.find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('reportedBy', 'displayName email')
+          .populate('station', 'name address city state'),
+        GasPrice.countDocuments(query),
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          posts,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error in AdminController.getCommunityPosts:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch community posts' });
+    }
+  };
 }

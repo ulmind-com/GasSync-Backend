@@ -14,6 +14,7 @@ router.use(authenticate, authorize('admin'));
 
 // Dashboard
 router.get('/dashboard', AdminController.getDashboardStats);
+router.get('/community-posts', AdminController.getCommunityPosts);
 
 // User Management
 router.get('/users', AdminController.getUsers);
