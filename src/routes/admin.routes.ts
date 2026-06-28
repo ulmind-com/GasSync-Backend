@@ -1,0 +1,22 @@
+// ============================================================
+// GasSync Backend - Admin Routes
+// ============================================================
+
+import { Router } from 'express';
+import { AdminController } from '../controllers/admin.controller';
+import { authenticate, authorize } from '../middleware/auth';
+
+const router = Router();
+
+// All admin routes require authentication and 'admin' role
+router.use(authenticate, authorize('admin'));
+
+// User Management
+router.get('/users', AdminController.getUsers);
+router.delete('/users/:id', AdminController.deleteUser);
+
+// Notifications
+router.post('/notify/broadcast', AdminController.broadcastNotification);
+router.post('/notify/user/:id', AdminController.sendUserNotification);
+
+export default router;
