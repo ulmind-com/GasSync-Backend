@@ -93,7 +93,7 @@ export class AdminController {
 
       const payloadData = data || { type: 'broadcast' };
       if (imageUrl) {
-        payloadData.image = imageUrl;
+        payloadData.image = imageUrl; // Keep in data just in case frontend needs it
       }
 
       for (const user of users) {
@@ -101,13 +101,21 @@ export class AdminController {
           continue;
         }
 
-        messages.push({
+        const message: ExpoPushMessage = {
           to: user.expoPushToken,
           sound: 'default',
           title,
           body,
           data: payloadData,
-        });
+        };
+
+        if (imageUrl) {
+          message.mutableContent = true;
+          // Use any to bypass TS error if richContent is strictly typed
+          (message as any).richContent = { image: imageUrl };
+        }
+
+        messages.push(message);
         tokenCount++;
       }
 
@@ -174,18 +182,24 @@ export class AdminController {
 
       const payloadData = data || { type: 'direct' };
       if (imageUrl) {
-        payloadData.image = imageUrl;
+        payloadData.image = imageUrl; // Keep in data for fallback
       }
 
-      const messages: ExpoPushMessage[] = [{
+      const message: ExpoPushMessage = {
         to: user.expoPushToken,
         sound: 'default',
         title,
         body,
         data: payloadData,
-      }];
+      };
 
-      const chunks = expo.chunkPushNotifications(messages);
+      if (imageUrl) {
+        message.mutableContent = true;
+        // Use any to bypass TS error if richContent is strictly typed
+        (message as any).richContent = { image: imageUrl };
+      }
+
+      const chunks = expo.chunkPushNotifications([message]);
       const ticketChunk = await expo.sendPushNotificationsAsync(chunks[0]);
       
       logger.info(`Direct push to user ${id} ticket:`, ticketChunk);
