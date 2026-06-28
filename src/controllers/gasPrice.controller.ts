@@ -356,6 +356,12 @@ export class GasPriceController {
         state: station.state,
         city: station.city,
         zipCode: station.zipCode,
+        stationName: station.name,
+        stationAddress: station.address,
+        location:
+          station.location && Array.isArray(station.location.coordinates) && station.location.coordinates.length === 2
+            ? { type: 'Point', coordinates: station.location.coordinates }
+            : undefined,
         reportedBy: req.userId,
         recordedAt: new Date(),
       });

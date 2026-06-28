@@ -18,6 +18,15 @@ export interface IGasPrice extends Document {
   city?: string;
   state?: string;
   zipCode?: string;
+  // Denormalized location info (mainly for community posts from bills, which
+  // often have no linked GasStation but DO carry a name / place / GPS point).
+  stationName?: string;
+  stationAddress?: string;
+  googlePlaceId?: string;
+  location?: {
+    type: string;
+    coordinates: number[]; // [longitude, latitude]
+  };
   reportedBy?: mongoose.Types.ObjectId; // user who reported
   recordedAt: Date;
   isVerified: boolean;
@@ -76,6 +85,30 @@ const gasPriceSchema = new Schema<IGasPrice>(
       type: String,
       trim: true,
     },
+    stationName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    stationAddress: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    googlePlaceId: {
+      type: String,
+      default: null,
+    },
+    location: {
+      type: {
+        type: String,
+        enum: ['Point'],
+      },
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        default: undefined,
+      },
+    },
     reportedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -103,6 +136,17 @@ gasPriceSchema.index({ fuelType: 1, recordedAt: -1 });
 gasPriceSchema.index({ state: 1, fuelType: 1, recordedAt: -1 });
 gasPriceSchema.index({ region: 1, fuelType: 1, recordedAt: -1 });
 gasPriceSchema.index({ source: 1, recordedAt: -1 });
+gasPriceSchema.index({ location: '2dsphere' });
+
+// A GeoJSON Point is only valid with a [lng, lat] coordinates array. Strip any
+// incomplete location so the doc is simply left out of the geo index instead
+// of failing to save ("Point must be an array or object").
+gasPriceSchema.pre('save', function () {
+  const loc = this.location;
+  if (!loc || !Array.isArray(loc.coordinates) || loc.coordinates.length !== 2) {
+    this.location = undefined;
+  }
+});
 
 // TTL index — auto-delete prices older than 1 year (optional, can be adjusted)
 // gasPriceSchema.index({ createdAt: 1 }, { expireAfterSeconds: 365 * 24 * 60 * 60 });

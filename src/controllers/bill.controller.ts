@@ -434,7 +434,9 @@ Example output:
       // Always mark as verified when user submits/confirms
       bill.status = 'verified';
 
-      // Also create a GasPrice entry from the bill data if we have price
+      // Also create a GasPrice entry from the bill data if we have price.
+      // Carry over the bill's location info (station name, place id, GPS point)
+      // so community posts are no longer "Unknown Location" in the admin panel.
       if (bill.pricePerGallon) {
         const priceEntry = new GasPrice({
           station: bill.station || undefined,
@@ -443,6 +445,13 @@ Example output:
           source: 'user_bill',
           state: req.body.state,
           city: req.body.city,
+          stationName: bill.stationName || undefined,
+          stationAddress: bill.stationAddress || undefined,
+          googlePlaceId: bill.googlePlaceId || undefined,
+          location:
+            bill.location && Array.isArray(bill.location.coordinates) && bill.location.coordinates.length === 2
+              ? { type: 'Point', coordinates: bill.location.coordinates }
+              : undefined,
           reportedBy: req.userId,
           recordedAt: bill.billDate ? new Date(bill.billDate!) : new Date(),
         });

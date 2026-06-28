@@ -15,6 +15,7 @@ router.use(authenticate, authorize('admin'));
 // Dashboard
 router.get('/dashboard', AdminController.getDashboardStats);
 router.get('/community-posts', AdminController.getCommunityPosts);
+router.delete('/community-posts/:id', AdminController.deleteCommunityPost);
 
 // User Management
 router.get('/users', AdminController.getUsers);

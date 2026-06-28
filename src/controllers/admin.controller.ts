@@ -232,25 +232,32 @@ export class AdminController {
         GasPrice.countDocuments({ source: { $in: communitySources as any[] }, createdAt: { $gte: oneDayAgo } }),
       ]);
 
-      // Top Locations for Community Posts
+      // Top reporting stations for community posts. Community posts rarely have
+      // a city/state (they come from bills), but they do carry a station name,
+      // so we group by that and fall back to city when a name is missing.
       const topLocations = await GasPrice.aggregate([
-        { $match: { source: { $in: communitySources }, city: { $exists: true, $ne: '' } } },
-        { 
-          $group: { 
-            _id: { city: '$city', state: '$state' }, 
-            count: { $sum: 1 } 
-          } 
+        { $match: { source: { $in: communitySources } } },
+        {
+          $group: {
+            _id: {
+              $ifNull: ['$stationName', { $ifNull: ['$city', 'Unknown'] }],
+            },
+            count: { $sum: 1 },
+            city: { $first: '$city' },
+            state: { $first: '$state' },
+          },
         },
         { $sort: { count: -1 } },
-        { $limit: 5 },
-        { 
-          $project: { 
-            _id: 0, 
-            city: '$_id.city', 
-            state: '$_id.state', 
-            count: 1 
-          } 
-        }
+        { $limit: 6 },
+        {
+          $project: {
+            _id: 0,
+            name: '$_id',
+            city: 1,
+            state: 1,
+            count: 1,
+          },
+        },
       ]);
 
       // Recent Activity
@@ -260,7 +267,7 @@ export class AdminController {
         .limit(5)
         .populate('reportedBy', 'displayName')
         .populate('station', 'name')
-        .select('fuelType price city state createdAt reportedBy station');
+        .select('fuelType price city state stationName googlePlaceId location createdAt reportedBy station');
 
       res.json({
         success: true,
@@ -321,6 +328,27 @@ export class AdminController {
     } catch (error) {
       logger.error('Error in AdminController.getCommunityPosts:', error);
       res.status(500).json({ success: false, message: 'Failed to fetch community posts' });
+    }
+  };
+
+  /**
+   * Delete a community post (gas price report)
+   */
+  static deleteCommunityPost = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+
+      const post = await GasPrice.findByIdAndDelete(id);
+
+      if (!post) {
+        res.status(404).json({ success: false, message: 'Community post not found' });
+        return;
+      }
+
+      res.json({ success: true, message: 'Community post deleted successfully' });
+    } catch (error) {
+      logger.error('Error in AdminController.deleteCommunityPost:', error);
+      res.status(500).json({ success: false, message: 'Failed to delete community post' });
     }
   };
 }
