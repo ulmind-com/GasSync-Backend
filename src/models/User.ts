@@ -16,6 +16,9 @@ export interface IUser extends Document {
   defaultZipCode?: string;
   defaultState?: string;
   role: 'user' | 'admin';
+  // Admin-panel access level. Only meaningful when role === 'admin'.
+  // Missing/undefined on legacy admins is treated as 'write' (full access).
+  adminPermission?: 'read' | 'write';
   isEmailVerified: boolean;
   resetPasswordOTP?: string;
   resetPasswordExpire?: Date;
@@ -111,6 +114,11 @@ const userSchema = new Schema<IUser>(
       enum: ['user', 'admin'],
       default: 'user',
     },
+    adminPermission: {
+      type: String,
+      enum: ['read', 'write'],
+      default: null,
+    },
     isEmailVerified: {
       type: Boolean,
       default: false,
@@ -175,6 +183,8 @@ userSchema.methods.toPublicJSON = function (): Record<string, any> {
     defaultZipCode: this.defaultZipCode,
     defaultState: this.defaultState,
     role: this.role,
+    // Legacy admins without the field default to full 'write' access.
+    adminPermission: this.role === 'admin' ? (this.adminPermission || 'write') : undefined,
     isEmailVerified: this.isEmailVerified,
     lastLoginAt: this.lastLoginAt,
     favorites: this.favorites || [],

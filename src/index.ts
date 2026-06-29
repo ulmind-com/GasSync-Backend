@@ -17,7 +17,6 @@ import Database from './config/database';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
-import { seedDatabase } from './utils/seeder';
 import { initNotificationJobs } from './jobs/notification.jobs';
 
 // Import routes
@@ -188,8 +187,9 @@ async function startServer(): Promise<void> {
     const db = Database.getInstance();
     await db.connect();
 
-    // Seed database (runs once — skips if data already exists)
-    await seedDatabase();
+    // NOTE: Database seeding disabled — demo seed data is no longer wanted.
+    // (Seeder file kept in src/utils/seeder.ts for manual use if ever needed.)
+    // await seedDatabase();
 
     // Initialize notification cron jobs
     initNotificationJobs();

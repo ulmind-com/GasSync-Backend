@@ -696,4 +696,185 @@ export class AdminPanelController {
       res.status(500).json({ success: false, message: 'Failed to export data' });
     }
   };
+
+  // ==========================================================
+  // 8. ADMIN MANAGEMENT (create admins with read / write access)
+  // ==========================================================
+
+  /**
+   * Current logged-in admin's profile (incl. effective permission).
+   */
+  static getMe = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Not authenticated' });
+        return;
+      }
+      res.json({ success: true, data: req.user.toPublicJSON() });
+    } catch (error) {
+      logger.error('Error in AdminPanelController.getMe:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch profile' });
+    }
+  };
+
+  /**
+   * List all admin accounts.
+   */
+  static getAdmins = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const admins = await User.find({ role: 'admin' })
+        .sort({ createdAt: -1 })
+        .select('displayName email adminPermission lastLoginAt createdAt');
+
+      res.json({
+        success: true,
+        data: {
+          admins: admins.map((a) => ({
+            id: a._id,
+            displayName: a.displayName,
+            email: a.email,
+            // Legacy admins (no field) are effectively full 'write'.
+            adminPermission: a.adminPermission || 'write',
+            lastLoginAt: a.lastLoginAt ?? null,
+            createdAt: a.createdAt,
+          })),
+        },
+      });
+    } catch (error) {
+      logger.error('Error in AdminPanelController.getAdmins:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch admins' });
+    }
+  };
+
+  /**
+   * Create a new admin account with a chosen permission level.
+   */
+  static createAdmin = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { displayName, email, password, permission } = req.body;
+
+      if (!displayName || !email || !password) {
+        res.status(400).json({ success: false, message: 'Name, email and password are required' });
+        return;
+      }
+      if (String(password).length < 8) {
+        res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
+        return;
+      }
+      const perm = permission === 'read' ? 'read' : 'write';
+
+      const existing = await User.findOne({ email: String(email).toLowerCase().trim() });
+      if (existing) {
+        res.status(409).json({ success: false, message: 'A user with this email already exists' });
+        return;
+      }
+
+      // Password is hashed by the User model's pre-save hook.
+      const admin = new User({
+        displayName,
+        email,
+        password,
+        role: 'admin',
+        adminPermission: perm,
+        isEmailVerified: true,
+      });
+      await admin.save();
+
+      await audit(req, 'admin.create', 'User', admin._id.toString(), { email: admin.email, permission: perm });
+
+      res.status(201).json({
+        success: true,
+        message: 'Admin created successfully',
+        data: {
+          id: admin._id,
+          displayName: admin.displayName,
+          email: admin.email,
+          adminPermission: perm,
+          createdAt: admin.createdAt,
+        },
+      });
+    } catch (error) {
+      logger.error('Error in AdminPanelController.createAdmin:', error);
+      res.status(500).json({ success: false, message: 'Failed to create admin' });
+    }
+  };
+
+  /**
+   * Update an admin's permission and/or reset their password.
+   */
+  static updateAdmin = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { permission, password } = req.body;
+
+      const admin = await User.findOne({ _id: id, role: 'admin' });
+      if (!admin) {
+        res.status(404).json({ success: false, message: 'Admin not found' });
+        return;
+      }
+
+      // Prevent an admin from downgrading their own access (avoids lockout).
+      if (id === req.userId && permission === 'read') {
+        res.status(400).json({ success: false, message: 'You cannot remove your own write access' });
+        return;
+      }
+
+      const changes: Record<string, any> = {};
+      if (permission === 'read' || permission === 'write') {
+        admin.adminPermission = permission;
+        changes.permission = permission;
+      }
+      if (password) {
+        if (String(password).length < 8) {
+          res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
+          return;
+        }
+        admin.password = password; // re-hashed by pre-save hook
+        changes.passwordReset = true;
+      }
+
+      await admin.save();
+      await audit(req, 'admin.update', 'User', id, changes);
+
+      res.json({
+        success: true,
+        message: 'Admin updated',
+        data: {
+          id: admin._id,
+          displayName: admin.displayName,
+          email: admin.email,
+          adminPermission: admin.adminPermission || 'write',
+        },
+      });
+    } catch (error) {
+      logger.error('Error in AdminPanelController.updateAdmin:', error);
+      res.status(500).json({ success: false, message: 'Failed to update admin' });
+    }
+  };
+
+  /**
+   * Delete an admin account (cannot delete yourself).
+   */
+  static deleteAdmin = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+
+      if (id === req.userId) {
+        res.status(400).json({ success: false, message: 'You cannot delete your own account' });
+        return;
+      }
+
+      const admin = await User.findOneAndDelete({ _id: id, role: 'admin' });
+      if (!admin) {
+        res.status(404).json({ success: false, message: 'Admin not found' });
+        return;
+      }
+
+      await audit(req, 'admin.delete', 'User', id, { email: admin.email });
+      res.json({ success: true, message: 'Admin deleted' });
+    } catch (error) {
+      logger.error('Error in AdminPanelController.deleteAdmin:', error);
+      res.status(500).json({ success: false, message: 'Failed to delete admin' });
+    }
+  };
 }
