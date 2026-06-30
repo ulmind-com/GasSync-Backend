@@ -620,10 +620,9 @@ export class GasPriceController {
         logger.debug(`[by-station] community geo query skipped: ${geoErr?.message}`);
       }
 
-      // ─── 2. Price cache lookup (~200m) ───
-      const D = 0.002;
-      const cacheFilter = { stationLat: { $gte: lat - D, $lte: lat + D }, stationLon: { $gte: lon - D, $lte: lon + D } };
-      const cached = await StationPriceCache.findOne(cacheFilter).lean();
+      // ─── 2. Price cache lookup by exact key (read/write symmetric) ───
+      const cacheId = `osm-${lat.toFixed(4)},${lon.toFixed(4)}`;
+      const cached = await StationPriceCache.findOne({ googlePlaceId: cacheId }).lean();
 
       let fuelPrices: any[] = [];
       let stationName = name;
@@ -686,7 +685,6 @@ export class GasPriceController {
             // Upsert by an exact key (not the range filter — Mongoose can't build
             // an upsert doc from $gte/$lte and throws in strict mode).
             const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-            const cacheId = `osm-${lat.toFixed(4)},${lon.toFixed(4)}`;
             await StationPriceCache.findOneAndUpdate(
               { googlePlaceId: cacheId },
               { $set: { googlePlaceId: cacheId, stationName, stationLat: lat, stationLon: lon, fuelPrices, fetchedAt: new Date(), expiresAt } },
