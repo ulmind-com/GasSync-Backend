@@ -33,8 +33,10 @@ export interface IGasStation extends Document {
 const gasStationSchema = new Schema<IGasStation>(
   {
     externalId: {
+      // OSM id (e.g. "node/123456") — unique so re-imports upsert instead of duplicating.
       type: String,
       sparse: true,
+      unique: true,
       index: true,
     },
     name: {
@@ -45,34 +47,34 @@ const gasStationSchema = new Schema<IGasStation>(
     },
     brand: {
       type: String,
-      required: [true, 'Brand is required'],
+      default: '',
       trim: true,
       index: true,
     },
     address: {
       type: String,
-      required: [true, 'Address is required'],
+      default: '',
       trim: true,
     },
     city: {
       type: String,
-      required: [true, 'City is required'],
+      default: '',
       trim: true,
       index: true,
     },
     state: {
       type: String,
-      required: [true, 'State is required'],
+      default: '',
       trim: true,
       uppercase: true,
       maxlength: 2,
       index: true,
     },
     zipCode: {
+      // OSM postcodes are optional and not always US-format, so no regex/required.
       type: String,
-      required: [true, 'ZIP code is required'],
+      default: '',
       trim: true,
-      match: [/^\d{5}(-\d{4})?$/, 'Please enter a valid US ZIP code'],
       index: true,
     },
     location: {
