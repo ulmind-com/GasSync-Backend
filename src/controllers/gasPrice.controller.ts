@@ -682,11 +682,14 @@ export class GasPriceController {
               currencyCode: fp.price?.currencyCode || 'USD',
               updateTime: fp.updateTime ? new Date(fp.updateTime) : new Date(),
             }));
-            // Cache with long expiry so stale data stays available as fallback
+            // Cache with long expiry so stale data stays available as fallback.
+            // Upsert by an exact key (not the range filter — Mongoose can't build
+            // an upsert doc from $gte/$lte and throws in strict mode).
             const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+            const cacheId = `osm-${lat.toFixed(4)},${lon.toFixed(4)}`;
             await StationPriceCache.findOneAndUpdate(
-              cacheFilter,
-              { googlePlaceId: `osm-${lat.toFixed(4)},${lon.toFixed(4)}`, stationName, stationLat: lat, stationLon: lon, fuelPrices, fetchedAt: new Date(), expiresAt },
+              { googlePlaceId: cacheId },
+              { $set: { googlePlaceId: cacheId, stationName, stationLat: lat, stationLon: lon, fuelPrices, fetchedAt: new Date(), expiresAt } },
               { upsert: true, new: true }
             );
             source = 'google';
