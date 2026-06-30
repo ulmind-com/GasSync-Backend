@@ -8,7 +8,7 @@ import GasPrice from '../models/GasPrice';
 import PriceHistory from '../models/PriceHistory';
 import GasStation from '../models/GasStation';
 import StationPriceCache from '../models/StationPriceCache';
-import { tryConsumeGoogleQuota } from '../models/ApiUsage';
+import { peekGoogleQuota, incrementGoogleQuota } from '../models/ApiUsage';
 import Bill from '../models/Bill';
 import { ApiResponseHelper } from '../utils/apiResponse';
 import { BadRequestError, NotFoundError } from '../utils/errors';
@@ -590,6 +590,10 @@ export class GasPriceController {
       const name = (req.query.name as string) || '';
       const lat = parseFloat(req.query.lat as string);
       const lon = parseFloat(req.query.lon as string);
+      // cacheOnly: list screens pass this so they NEVER trigger a paid Google
+      // call — they only ever read cached/community prices. Google is reserved
+      // for detail-screen opens.
+      const cacheOnly = req.query.cacheOnly === '1' || req.query.cacheOnly === 'true';
       if (!name || isNaN(lat) || isNaN(lon)) {
         throw new BadRequestError('name, lat, and lon query parameters are required');
       }
@@ -642,8 +646,9 @@ export class GasPriceController {
         stationName = cached!.stationName || name;
         source = 'cache';
         fetchedAt = cached!.fetchedAt;
-      } else if (await tryConsumeGoogleQuota()) {
-        // Stale/missing AND budget available — resolve via Google Text Search (incl. fuelOptions)
+      } else if (!cacheOnly && (await peekGoogleQuota())) {
+        // Stale/missing AND budget available AND not a list (cacheOnly) request —
+        // resolve via Google Text Search (incl. fuelOptions).
         try {
           logger.info(`[by-station] refresh via Google: ${name} @ ${lat},${lon}`);
           const gRes = await axios.post(
@@ -662,6 +667,9 @@ export class GasPriceController {
               timeout: 10000,
             }
           );
+          // Call succeeded (billable) — count it against today's budget. Failed
+          // calls (e.g. API not enabled) throw and are NOT counted.
+          await incrementGoogleQuota();
           const place = gRes.data?.places?.[0];
           const fuelOptions = place?.fuelOptions?.fuelPrices || [];
           if (place && fuelOptions.length > 0) {
@@ -694,10 +702,10 @@ export class GasPriceController {
           else source = 'community_only';
         }
       } else if (haveCache) {
-        // Daily budget hit — serve last-known price, never blank
+        // Budget hit or list request — serve last-known price, never blank
         serveStale();
       } else {
-        source = 'quota_exhausted';
+        source = cacheOnly ? 'no_price_yet' : 'quota_exhausted';
       }
 
       ApiResponseHelper.success(res, {

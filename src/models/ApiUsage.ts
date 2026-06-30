@@ -28,24 +28,22 @@ const ApiUsage: Model<IApiUsage> = mongoose.model<IApiUsage>('ApiUsage', apiUsag
 // Details call (~$0.04). ~40/day keeps the monthly bill under ~$30.
 export const DAILY_GOOGLE_PRICE_CAP = Number(process.env.DAILY_GOOGLE_PRICE_CAP || 40);
 
-/** Returns true and increments if we're still under today's cap, else false. */
-export async function tryConsumeGoogleQuota(): Promise<boolean> {
-  const day = new Date().toISOString().slice(0, 10);
-  const key = `google-fuel:${day}`;
-  // Atomically bump only while under the cap.
-  const doc = await ApiUsage.findOneAndUpdate(
-    { key, count: { $lt: DAILY_GOOGLE_PRICE_CAP } },
+const todayKey = () => `google-fuel:${new Date().toISOString().slice(0, 10)}`;
+
+/** True if we still have budget today — does NOT consume. Consume only after a
+ *  successful (billable) Google call via incrementGoogleQuota(). */
+export async function peekGoogleQuota(): Promise<boolean> {
+  const doc = await ApiUsage.findOne({ key: todayKey() }).lean();
+  return (doc?.count || 0) < DAILY_GOOGLE_PRICE_CAP;
+}
+
+/** Record one successful paid Google call against today's budget. */
+export async function incrementGoogleQuota(): Promise<void> {
+  await ApiUsage.findOneAndUpdate(
+    { key: todayKey() },
     { $inc: { count: 1 } },
-    { new: true, upsert: false }
+    { upsert: true }
   );
-  if (doc) return true;
-  // No doc under cap — either doesn't exist yet or cap reached. Try to create.
-  try {
-    await ApiUsage.create({ key, count: 1 });
-    return true;
-  } catch {
-    return false; // exists and already at cap
-  }
 }
 
 export default ApiUsage;
