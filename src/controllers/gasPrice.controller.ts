@@ -8,6 +8,7 @@ import GasPrice from '../models/GasPrice';
 import PriceHistory from '../models/PriceHistory';
 import GasStation from '../models/GasStation';
 import StationPriceCache from '../models/StationPriceCache';
+import { tryConsumeGoogleQuota } from '../models/ApiUsage';
 import Bill from '../models/Bill';
 import { ApiResponseHelper } from '../utils/apiResponse';
 import { BadRequestError, NotFoundError } from '../utils/errors';
@@ -546,6 +547,159 @@ export class GasPriceController {
       }
 
       // ─── Return both fuel prices + community prices ───
+      ApiResponseHelper.success(res, {
+        source,
+        stationName,
+        fuelPrices,
+        fetchedAt,
+        communityPrices: mappedCommunity,
+      }, `Station prices retrieved (${source}, ${mappedCommunity.length} community)`);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/v1/prices/by-station:
+   *   get:
+   *     summary: Fuel prices for a DB/OSM station by name + lat/lon (10-day cache, quota-capped)
+   *     description: |
+   *       For stations served from our own DB (no Google place_id). Community
+   *       prices first (free). Cached Google price reused for 10 days. On a cache
+   *       miss/stale, resolves the station via Google Text Search (with fuelOptions)
+   *       only while under the daily budget cap; otherwise serves the last-known
+   *       price from cache so the user never sees a blank.
+   *     tags: [Gas Prices]
+   *     parameters:
+   *       - in: query
+   *         name: name
+   *         required: true
+   *         schema: { type: string }
+   *       - in: query
+   *         name: lat
+   *         required: true
+   *         schema: { type: number }
+   *       - in: query
+   *         name: lon
+   *         required: true
+   *         schema: { type: number }
+   */
+  static async getStationPricesByNameLocation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const name = (req.query.name as string) || '';
+      const lat = parseFloat(req.query.lat as string);
+      const lon = parseFloat(req.query.lon as string);
+      if (!name || isNaN(lat) || isNaN(lon)) {
+        throw new BadRequestError('name, lat, and lon query parameters are required');
+      }
+
+      // ─── 1. Community prices (FREE — within 500m) ───
+      let mappedCommunity: any[] = [];
+      try {
+        const community = await Bill.find({
+          location: { $nearSphere: { $geometry: { type: 'Point', coordinates: [lon, lat] }, $maxDistance: 500 } },
+          status: { $in: ['extracted', 'verified'] },
+          pricePerGallon: { $ne: null },
+        }).sort({ billDate: -1 }).limit(10).populate('user', 'displayName avatarUrl').lean();
+        mappedCommunity = community.map((b) => ({
+          id: b._id,
+          fuelType: b.fuelType || 'regular',
+          price: b.pricePerGallon,
+          reportedBy: (b.user as any)?.displayName || 'Anonymous',
+          reportedByAvatar: (b.user as any)?.avatarUrl || null,
+          billDate: b.billDate,
+          source: 'user_bill',
+          imageUrl: b.imageUrl,
+        }));
+      } catch (geoErr: any) {
+        logger.debug(`[by-station] community geo query skipped: ${geoErr?.message}`);
+      }
+
+      // ─── 2. Price cache lookup (~200m) ───
+      const D = 0.002;
+      const cacheFilter = { stationLat: { $gte: lat - D, $lte: lat + D }, stationLon: { $gte: lon - D, $lte: lon + D } };
+      const cached = await StationPriceCache.findOne(cacheFilter).lean();
+
+      let fuelPrices: any[] = [];
+      let stationName = name;
+      let source = 'none';
+      let fetchedAt: Date | null = null;
+
+      const FRESH_MS = 10 * 24 * 60 * 60 * 1000; // 10-day freshness
+      const cacheAgeOk = cached?.fetchedAt && Date.now() - new Date(cached.fetchedAt).getTime() < FRESH_MS;
+      const haveCache = !!(cached && cached.fuelPrices.length > 0);
+      const serveStale = () => {
+        fuelPrices = cached!.fuelPrices;
+        stationName = cached!.stationName || name;
+        source = 'stale_cache';
+        fetchedAt = cached!.fetchedAt;
+      };
+
+      if (haveCache && cacheAgeOk) {
+        // Fresh enough — no API call
+        fuelPrices = cached!.fuelPrices;
+        stationName = cached!.stationName || name;
+        source = 'cache';
+        fetchedAt = cached!.fetchedAt;
+      } else if (await tryConsumeGoogleQuota()) {
+        // Stale/missing AND budget available — resolve via Google Text Search (incl. fuelOptions)
+        try {
+          logger.info(`[by-station] refresh via Google: ${name} @ ${lat},${lon}`);
+          const gRes = await axios.post(
+            'https://places.googleapis.com/v1/places:searchText',
+            {
+              textQuery: name,
+              locationBias: { circle: { center: { latitude: lat, longitude: lon }, radius: 500.0 } },
+              maxResultCount: 1,
+            },
+            {
+              headers: {
+                'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+                'X-Goog-FieldMask': 'places.id,places.displayName,places.fuelOptions',
+                'Content-Type': 'application/json',
+              },
+              timeout: 10000,
+            }
+          );
+          const place = gRes.data?.places?.[0];
+          const fuelOptions = place?.fuelOptions?.fuelPrices || [];
+          if (place && fuelOptions.length > 0) {
+            stationName = place.displayName?.text || name;
+            fuelPrices = fuelOptions.map((fp: any) => ({
+              type: fp.type || 'UNKNOWN',
+              price: fp.price?.units
+                ? parseFloat(`${fp.price.units}.${(fp.price.nanos || 0).toString().padStart(9, '0').slice(0, 2)}`)
+                : 0,
+              currencyCode: fp.price?.currencyCode || 'USD',
+              updateTime: fp.updateTime ? new Date(fp.updateTime) : new Date(),
+            }));
+            // Cache with long expiry so stale data stays available as fallback
+            const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+            await StationPriceCache.findOneAndUpdate(
+              cacheFilter,
+              { googlePlaceId: `osm-${lat.toFixed(4)},${lon.toFixed(4)}`, stationName, stationLat: lat, stationLon: lon, fuelPrices, fetchedAt: new Date(), expiresAt },
+              { upsert: true, new: true }
+            );
+            source = 'google';
+            fetchedAt = new Date();
+          } else if (haveCache) {
+            serveStale(); // Google had no price — keep old
+          } else {
+            source = 'community_only';
+          }
+        } catch (apiErr: any) {
+          logger.warn(`[by-station] Google failed for ${name}: ${apiErr?.message || 'unknown'}`);
+          if (haveCache) serveStale();
+          else source = 'community_only';
+        }
+      } else if (haveCache) {
+        // Daily budget hit — serve last-known price, never blank
+        serveStale();
+      } else {
+        source = 'quota_exhausted';
+      }
+
       ApiResponseHelper.success(res, {
         source,
         stationName,
