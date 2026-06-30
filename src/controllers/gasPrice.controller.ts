@@ -760,4 +760,198 @@ export class GasPriceController {
       next(error);
     }
   }
+
+  /**
+   * @swagger
+   * /api/v1/prices/by-station:
+   *   get:
+   *     summary: Get fuel prices for a station by name + location (smart cached)
+   *     description: |
+   *       Resolves a station name + lat/lon to Google Place ID, fetches fuel prices,
+   *       and caches for 24 hours. Much cheaper than client-side Google Places calls.
+   *       Also returns community-submitted prices from nearby bills.
+   *     tags: [Gas Prices]
+   *     parameters:
+   *       - in: query
+   *         name: name
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Station name (e.g., "Shell")
+   *       - in: query
+   *         name: lat
+   *         required: true
+   *         schema:
+   *           type: number
+   *       - in: query
+   *         name: lon
+   *         required: true
+   *         schema:
+   *           type: number
+   *     responses:
+   *       200:
+   *         description: Station fuel prices (cached Google + community)
+   */
+  static async getStationPricesByNameLocation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const name = req.query.name as string;
+      const lat = parseFloat(req.query.lat as string);
+      const lon = parseFloat(req.query.lon as string);
+
+      if (!name || isNaN(lat) || isNaN(lon)) {
+        throw new BadRequestError('name, lat, and lon query parameters are required');
+      }
+
+      // ─── 1. Community prices (FREE — from MongoDB, within 500m) ───
+      let mappedCommunity: any[] = [];
+      try {
+        const communityPrices = await Bill.find({
+          location: {
+            $nearSphere: {
+              $geometry: { type: 'Point', coordinates: [lon, lat] },
+              $maxDistance: 500, // 500 meters
+            },
+          },
+          status: { $in: ['extracted', 'verified'] },
+          pricePerGallon: { $ne: null },
+        })
+          .sort({ billDate: -1 })
+          .limit(10)
+          .populate('user', 'displayName avatarUrl')
+          .lean();
+
+        mappedCommunity = communityPrices.map((b) => ({
+          id: b._id,
+          fuelType: b.fuelType || 'regular',
+          price: b.pricePerGallon,
+          reportedBy: (b.user as any)?.displayName || 'Anonymous',
+          reportedByAvatar: (b.user as any)?.avatarUrl || null,
+          billDate: b.billDate,
+          source: 'user_bill',
+          imageUrl: b.imageUrl,
+          totalAmount: b.totalAmount,
+          totalGallons: b.totalGallons,
+          helpfulCount: b.helpfulUsers?.length || 0,
+          notHelpfulCount: b.notHelpfulUsers?.length || 0,
+          helpfulUsers: b.helpfulUsers || [],
+          notHelpfulUsers: b.notHelpfulUsers || [],
+        }));
+      } catch (geoErr: any) {
+        // Geo query may fail if no 2dsphere index entries — that's okay
+        logger.debug(`[by-station] Community geo query failed (likely no indexed docs): ${geoErr?.message}`);
+      }
+
+      // ─── 2. Check cache by location (find cached station within ~200m) ───
+      let fuelPrices: any[] = [];
+      let stationName = name;
+      let source = 'none';
+      let fetchedAt: Date | null = null;
+
+      const LAT_DELTA = 0.002; // ~200m
+      const LON_DELTA = 0.002;
+      const cached = await StationPriceCache.findOne({
+        stationLat: { $gte: lat - LAT_DELTA, $lte: lat + LAT_DELTA },
+        stationLon: { $gte: lon - LON_DELTA, $lte: lon + LON_DELTA },
+      }).lean();
+
+      if (cached && cached.fuelPrices.length > 0) {
+        // CACHE HIT
+        logger.info(`[by-station] Cache HIT for: ${name} @ ${lat},${lon}`);
+        fuelPrices = cached.fuelPrices;
+        stationName = cached.stationName || name;
+        source = 'cache';
+        fetchedAt = cached.fetchedAt;
+      } else {
+        // CACHE MISS — resolve via Google (2 API calls, then cache 24hr)
+        try {
+          logger.info(`[by-station] Cache MISS for: ${name} @ ${lat},${lon} — resolving via Google`);
+
+          // 2a. Find Google Place ID from name + location
+          const findRes = await axios.get(
+            'https://maps.googleapis.com/maps/api/place/findplacefromtext/json',
+            {
+              params: {
+                input: name,
+                inputtype: 'textquery',
+                locationbias: `circle:500@${lat},${lon}`,
+                fields: 'place_id,name',
+                key: GOOGLE_MAPS_API_KEY,
+              },
+              timeout: 10000,
+            }
+          );
+
+          const googlePlaceId = findRes.data?.candidates?.[0]?.place_id;
+          const resolvedName = findRes.data?.candidates?.[0]?.name || name;
+
+          if (googlePlaceId) {
+            // 2b. Fetch fuel prices from Google Places API (New)
+            const priceRes = await axios.get(
+              `https://places.googleapis.com/v1/places/${googlePlaceId}`,
+              {
+                headers: {
+                  'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+                  'X-Goog-FieldMask': 'displayName,fuelOptions',
+                },
+                timeout: 10000,
+              }
+            );
+
+            const placeData = priceRes.data;
+            const fuelOptions = placeData?.fuelOptions?.fuelPrices || [];
+            stationName = placeData?.displayName?.text || resolvedName;
+
+            fuelPrices = fuelOptions.map((fp: any) => ({
+              type: fp.type || 'UNKNOWN',
+              price: fp.price?.units
+                ? parseFloat(`${fp.price.units}.${(fp.price.nanos || 0).toString().padStart(9, '0').slice(0, 2)}`)
+                : 0,
+              currencyCode: fp.price?.currencyCode || 'USD',
+              updateTime: fp.updateTime ? new Date(fp.updateTime) : new Date(),
+            }));
+
+            // Save to cache (24hr TTL)
+            const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000);
+            await StationPriceCache.findOneAndUpdate(
+              {
+                stationLat: { $gte: lat - LAT_DELTA, $lte: lat + LAT_DELTA },
+                stationLon: { $gte: lon - LON_DELTA, $lte: lon + LON_DELTA },
+              },
+              {
+                googlePlaceId,
+                stationName,
+                stationLat: lat,
+                stationLon: lon,
+                fuelPrices,
+                fetchedAt: new Date(),
+                expiresAt,
+              },
+              { upsert: true, new: true }
+            );
+
+            source = 'google';
+            fetchedAt = new Date();
+            logger.info(`[by-station] Cached ${fuelPrices.length} fuel prices for: ${stationName}`);
+          } else {
+            logger.warn(`[by-station] Google could not find place for: ${name} @ ${lat},${lon}`);
+            source = 'community_only';
+          }
+        } catch (googleError: any) {
+          logger.warn(`[by-station] Google API failed for ${name}: ${googleError?.message || 'unknown'}`);
+          source = 'community_only';
+        }
+      }
+
+      // ─── Return both fuel prices + community prices ───
+      ApiResponseHelper.success(res, {
+        source,
+        stationName,
+        fuelPrices,
+        fetchedAt,
+        communityPrices: mappedCommunity,
+      }, `Station prices retrieved (${source}, ${mappedCommunity.length} community)`);
+    } catch (error) {
+      next(error);
+    }
+  }
 }

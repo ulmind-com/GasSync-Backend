@@ -13,7 +13,8 @@ export interface IBill extends Document {
   station?: mongoose.Types.ObjectId;
   imageUrl: string;
   thumbnailUrl?: string;
-  googlePlaceId?: string;
+  googlePlaceId?: string; // Legacy support
+  osmId?: string; // New OpenStreetMap support
 
   // Extracted data from OCR
   stationName?: string;
@@ -69,6 +70,11 @@ const billSchema = new Schema<IBill>(
       default: null,
     },
     googlePlaceId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    osmId: {
       type: String,
       default: null,
       index: true,

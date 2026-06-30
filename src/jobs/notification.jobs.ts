@@ -93,8 +93,12 @@ function schedulePriceDropAlert() {
       for (const user of users) {
         for (const fav of user.favorites) {
           // Find the 2 most recent community prices for this station
+          // fav.id could be an old Google Place ID or a new OSM ID (e.g. node/123)
           const recentBills = await Bill.find({
-            googlePlaceId: fav.id,
+            $or: [
+              { googlePlaceId: fav.id },
+              { osmId: fav.id }
+            ],
             status: { $in: ['extracted', 'verified'] },
             pricePerGallon: { $ne: null },
           })
