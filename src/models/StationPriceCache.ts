@@ -3,7 +3,6 @@
 // ============================================================
 // Caches fuel prices fetched from Google Places API (New)
 // TTL: 24 hours — reduces API costs dramatically
-// Supports lookup by googlePlaceId OR by lat/lon (for OSM stations)
 
 import mongoose, { Document, Schema, Model } from 'mongoose';
 
@@ -16,11 +15,8 @@ export interface IFuelPrice {
 
 export interface IStationPriceCache extends Document {
   _id: mongoose.Types.ObjectId;
-  googlePlaceId?: string;         // Google Places place_id (e.g., ChIJxyz...)
-  osmId?: string;                 // OSM ID (e.g., "node/123456")
+  googlePlaceId: string;          // Google Places place_id (e.g., ChIJxyz...)
   stationName: string;
-  stationLat?: number;            // Station latitude (for geo-based cache lookup)
-  stationLon?: number;            // Station longitude (for geo-based cache lookup)
   fuelPrices: IFuelPrice[];
   fetchedAt: Date;                // when we fetched from Google
   expiresAt: Date;                // TTL — auto-delete after 24 hours
@@ -42,27 +38,13 @@ const stationPriceCacheSchema = new Schema<IStationPriceCache>(
   {
     googlePlaceId: {
       type: String,
-      required: false,
-      sparse: true,
-      index: true,
-    },
-    osmId: {
-      type: String,
-      default: null,
-      sparse: true,
+      required: true,
+      unique: true,
       index: true,
     },
     stationName: {
       type: String,
       default: '',
-    },
-    stationLat: {
-      type: Number,
-      default: null,
-    },
-    stationLon: {
-      type: Number,
-      default: null,
     },
     fuelPrices: [fuelPriceSchema],
     fetchedAt: {
@@ -81,9 +63,6 @@ const stationPriceCacheSchema = new Schema<IStationPriceCache>(
     versionKey: false,
   }
 );
-
-// Compound index for location-based cache lookups
-stationPriceCacheSchema.index({ stationLat: 1, stationLon: 1 });
 
 const StationPriceCache: Model<IStationPriceCache> = mongoose.model<IStationPriceCache>(
   'StationPriceCache',
