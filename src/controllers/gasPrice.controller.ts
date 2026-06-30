@@ -822,77 +822,9 @@ export class GasPriceController {
         source = 'cache';
         fetchedAt = cached.fetchedAt;
       } else {
-        // CACHE MISS — resolve via CollectAPI (then cache 24hr)
-        try {
-          logger.info(`[by-station] Cache MISS for: ${name} @ ${lat},${lon} — resolving via CollectAPI`);
-
-          const collectRes = await axios.get(
-            `https://api.collectapi.com/gasPrice/fromCoordinates?lng=${lon}&lat=${lat}`,
-            {
-              headers: {
-                'authorization': `apikey ${process.env.COLLECT_API_KEY}`,
-                'content-type': 'application/json'
-              },
-              timeout: 10000,
-            }
-          );
-
-          if (collectRes.data && collectRes.data.success) {
-            const resultData = Array.isArray(collectRes.data.result) 
-              ? collectRes.data.result[0] 
-              : collectRes.data.result;
-
-            if (resultData && (resultData.gasoline || resultData.diesel)) {
-              fuelPrices = [];
-              const currency = resultData.currency?.toUpperCase() || 'USD';
-              
-              if (resultData.gasoline) {
-                fuelPrices.push({ type: 'REGULAR_UNLEADED', price: parseFloat(resultData.gasoline), currencyCode: currency, updateTime: new Date() });
-              }
-              if (resultData.midGrade) {
-                fuelPrices.push({ type: 'MIDGRADE', price: parseFloat(resultData.midGrade), currencyCode: currency, updateTime: new Date() });
-              }
-              if (resultData.premium) {
-                fuelPrices.push({ type: 'PREMIUM', price: parseFloat(resultData.premium), currencyCode: currency, updateTime: new Date() });
-              }
-              if (resultData.diesel) {
-                fuelPrices.push({ type: 'DIESEL', price: parseFloat(resultData.diesel), currencyCode: currency, updateTime: new Date() });
-              }
-
-              // Save to cache (24hr TTL)
-              const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000);
-              await StationPriceCache.findOneAndUpdate(
-                {
-                  stationLat: { $gte: lat - LAT_DELTA, $lte: lat + LAT_DELTA },
-                  stationLon: { $gte: lon - LON_DELTA, $lte: lon + LON_DELTA },
-                },
-                {
-                  googlePlaceId: `collectapi-${lat.toFixed(3)},${lon.toFixed(3)}`, // Dummy ID to satisfy schema
-                  stationName,
-                  stationLat: lat,
-                  stationLon: lon,
-                  fuelPrices,
-                  fetchedAt: new Date(),
-                  expiresAt,
-                },
-                { upsert: true, new: true }
-              );
-
-              source = 'collectapi';
-              fetchedAt = new Date();
-              logger.info(`[by-station] Cached ${fuelPrices.length} fuel prices for: ${stationName} via CollectAPI`);
-            } else {
-              logger.warn(`[by-station] CollectAPI returned success but no fuel data for: ${lat},${lon}`);
-              source = 'community_only';
-            }
-          } else {
-            logger.warn(`[by-station] CollectAPI failed or returned false for: ${lat},${lon}`);
-            source = 'community_only';
-          }
-        } catch (apiError: any) {
-          logger.warn(`[by-station] CollectAPI request failed for ${name}: ${apiError?.message || 'unknown'}`);
-          source = 'community_only';
-        }
+        // Cache MISS — Google API/CollectAPI removed. We only rely on community prices.
+        source = 'community_only';
+        stationName = name;
       }
 
       // ─── Return both fuel prices + community prices ───
