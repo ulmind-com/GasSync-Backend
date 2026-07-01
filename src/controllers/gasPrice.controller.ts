@@ -590,6 +590,10 @@ export class GasPriceController {
       const name = (req.query.name as string) || '';
       const lat = parseFloat(req.query.lat as string);
       const lon = parseFloat(req.query.lon as string);
+      // Station id (our DB _id) — community reports are tagged with it as
+      // googlePlaceId, so we match by it exactly (a report can be geo-tagged with
+      // the device location, which may be >500m from the station itself).
+      const stationId = (req.query.stationId as string) || '';
       // cacheOnly: list screens pass this so they NEVER trigger a paid Google
       // call — they only ever read cached/community prices. Google is reserved
       // for detail-screen opens.
@@ -598,26 +602,41 @@ export class GasPriceController {
         throw new BadRequestError('name, lat, and lon query parameters are required');
       }
 
-      // ─── 1. Community prices (FREE — within 500m) ───
+      // ─── 1. Community prices: exact station match (by id) + nearby (500m), merged ───
+      // ($nearSphere can't be combined with $or, so run both and de-dupe.)
       let mappedCommunity: any[] = [];
       try {
-        const community = await Bill.find({
-          location: { $nearSphere: { $geometry: { type: 'Point', coordinates: [lon, lat] }, $maxDistance: 500 } },
-          status: { $in: ['extracted', 'verified'] },
-          pricePerGallon: { $ne: null },
-        }).sort({ billDate: -1 }).limit(10).populate('user', 'displayName avatarUrl').lean();
-        mappedCommunity = community.map((b) => ({
-          id: b._id,
-          fuelType: b.fuelType || 'regular',
-          price: b.pricePerGallon,
-          reportedBy: (b.user as any)?.displayName || 'Anonymous',
-          reportedByAvatar: (b.user as any)?.avatarUrl || null,
-          billDate: b.billDate,
-          source: 'user_bill',
-          imageUrl: b.imageUrl,
-        }));
+        const baseFilter = { status: { $in: ['extracted', 'verified'] }, pricePerGallon: { $ne: null } };
+        const [byId, byGeo] = await Promise.all([
+          stationId
+            ? Bill.find({ ...baseFilter, googlePlaceId: stationId }).sort({ billDate: -1 }).limit(15).populate('user', 'displayName avatarUrl').lean()
+            : Promise.resolve([] as any[]),
+          Bill.find({ ...baseFilter, location: { $nearSphere: { $geometry: { type: 'Point', coordinates: [lon, lat] }, $maxDistance: 500 } } })
+            .sort({ billDate: -1 }).limit(15).populate('user', 'displayName avatarUrl').lean(),
+        ]);
+        const seen = new Set<string>();
+        mappedCommunity = [...byId, ...byGeo]
+          .filter((b: any) => { const k = String(b._id); if (seen.has(k)) return false; seen.add(k); return true; })
+          .sort((a: any, b: any) => new Date(b.billDate || 0).getTime() - new Date(a.billDate || 0).getTime())
+          .slice(0, 15)
+          .map((b: any) => ({
+            id: b._id,
+            fuelType: b.fuelType || 'regular',
+            price: b.pricePerGallon,
+            reportedBy: (b.user as any)?.displayName || 'Anonymous',
+            reportedByAvatar: (b.user as any)?.avatarUrl || null,
+            billDate: b.billDate,
+            source: 'user_bill',
+            imageUrl: b.imageUrl,
+            totalAmount: b.totalAmount,
+            totalGallons: b.totalGallons,
+            helpfulCount: b.helpfulUsers?.length || 0,
+            notHelpfulCount: b.notHelpfulUsers?.length || 0,
+            helpfulUsers: b.helpfulUsers || [],
+            notHelpfulUsers: b.notHelpfulUsers || [],
+          }));
       } catch (geoErr: any) {
-        logger.debug(`[by-station] community geo query skipped: ${geoErr?.message}`);
+        logger.debug(`[by-station] community query skipped: ${geoErr?.message}`);
       }
 
       // ─── 2. Price cache lookup by exact key (read/write symmetric) ───
