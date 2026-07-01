@@ -606,14 +606,13 @@ export class GasPriceController {
       // ($nearSphere can't be combined with $or, so run both and de-dupe.)
       let mappedCommunity: any[] = [];
       try {
-        const baseFilter = { status: { $in: ['extracted', 'verified'] }, pricePerGallon: { $ne: null } };
-        const [byId, byGeo] = await Promise.all([
-          stationId
-            ? Bill.find({ ...baseFilter, googlePlaceId: stationId }).sort({ billDate: -1 }).limit(15).populate('user', 'displayName avatarUrl').lean()
-            : Promise.resolve([] as any[]),
-          Bill.find({ ...baseFilter, location: { $nearSphere: { $geometry: { type: 'Point', coordinates: [lon, lat] }, $maxDistance: 500 } } })
-            .sort({ billDate: -1 }).limit(15).populate('user', 'displayName avatarUrl').lean(),
-        ]);
+        const baseFilter: any = { status: { $in: ['extracted', 'verified'] }, pricePerGallon: { $ne: null } };
+        const idQuery: Promise<any[]> = stationId
+          ? Bill.find({ ...baseFilter, googlePlaceId: stationId }).sort({ billDate: -1 }).limit(15).populate('user', 'displayName avatarUrl').lean()
+          : Promise.resolve([]);
+        const geoQuery: Promise<any[]> = Bill.find({ ...baseFilter, location: { $nearSphere: { $geometry: { type: 'Point', coordinates: [lon, lat] }, $maxDistance: 500 } } })
+          .sort({ billDate: -1 }).limit(15).populate('user', 'displayName avatarUrl').lean();
+        const [byId, byGeo] = await Promise.all([idQuery, geoQuery]);
         const seen = new Set<string>();
         mappedCommunity = [...byId, ...byGeo]
           .filter((b: any) => { const k = String(b._id); if (seen.has(k)) return false; seen.add(k); return true; })
