@@ -423,6 +423,47 @@ export class AdminController {
   };
 
   /**
+   * Bulk-delete community posts (bills) by id, cascading their derived prices.
+   */
+  static bulkDeleteCommunityPosts = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        res.status(400).json({ success: false, message: 'No post ids provided' });
+        return;
+      }
+      if (ids.length > 500) {
+        res.status(400).json({ success: false, message: 'Too many ids in one request (max 500)' });
+        return;
+      }
+
+      const bills = await Bill.find({ _id: { $in: ids } });
+      await Bill.deleteMany({ _id: { $in: ids } });
+
+      // Best-effort cascade: remove each bill's derived user_bill GasPrice.
+      for (const bill of bills) {
+        if (bill.pricePerGallon != null && bill.user) {
+          await GasPrice.deleteMany({
+            source: 'user_bill',
+            reportedBy: bill.user,
+            price: bill.pricePerGallon,
+            ...(bill.fuelType ? { fuelType: bill.fuelType } : {}),
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Deleted ${bills.length} community post(s)`,
+        data: { deletedCount: bills.length },
+      });
+    } catch (error) {
+      logger.error('Error in AdminController.bulkDeleteCommunityPosts:', error);
+      res.status(500).json({ success: false, message: 'Failed to delete community posts' });
+    }
+  };
+
+  /**
    * Get paginated user feedback (with optional category/status filters)
    */
   static getFeedback = async (req: Request, res: Response): Promise<void> => {

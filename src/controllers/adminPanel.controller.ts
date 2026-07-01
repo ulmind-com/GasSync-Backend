@@ -589,6 +589,35 @@ export class AdminPanelController {
     }
   };
 
+  /**
+   * Bulk-delete stations by id (used by the multi-select delete in the panel).
+   */
+  static bulkDeleteStations = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        res.status(400).json({ success: false, message: 'No station ids provided' });
+        return;
+      }
+      if (ids.length > 500) {
+        res.status(400).json({ success: false, message: 'Too many ids in one request (max 500)' });
+        return;
+      }
+
+      const result = await GasStation.deleteMany({ _id: { $in: ids } });
+      await audit(req, 'station.bulkDelete', 'GasStation', undefined, { count: result.deletedCount });
+
+      res.json({
+        success: true,
+        message: `Deleted ${result.deletedCount} station(s)`,
+        data: { deletedCount: result.deletedCount },
+      });
+    } catch (error) {
+      logger.error('Error in AdminPanelController.bulkDeleteStations:', error);
+      res.status(500).json({ success: false, message: 'Failed to delete stations' });
+    }
+  };
+
   // ==========================================================
   // 6. AUDIT LOG
   // ==========================================================

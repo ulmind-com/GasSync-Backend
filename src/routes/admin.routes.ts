@@ -35,6 +35,7 @@ const requireWrite = (req: Request, res: Response, next: NextFunction): void => 
 // Dashboard
 router.get('/dashboard', AdminController.getDashboardStats);
 router.get('/community-posts', AdminController.getCommunityPosts);
+router.post('/community-posts/bulk-delete', requireWrite, AdminController.bulkDeleteCommunityPosts);
 router.delete('/community-posts/:id', requireWrite, AdminController.deleteCommunityPost);
 
 // Feedback
@@ -73,6 +74,7 @@ router.delete('/prices/:id', requireWrite, AdminPanelController.deletePrice);
 
 // Stations
 router.get('/stations', AdminPanelController.getStations);
+router.post('/stations/bulk-delete', requireWrite, AdminPanelController.bulkDeleteStations);
 router.patch('/stations/:id', requireWrite, AdminPanelController.updateStation);
 
 // Audit log
