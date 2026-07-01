@@ -543,9 +543,9 @@ export class AdminPanelController {
           .select('name brand address city state isActive lastPriceUpdate createdAt'),
         GasStation.countDocuments(filter),
         GasStation.countDocuments({ isActive: true }),
-        GasStation.countDocuments({
-          $or: [{ lastPriceUpdate: { $lt: sevenDaysAgo } }, { lastPriceUpdate: null }],
-        }),
+        // "Stale" = has a price that's now older than 7 days (needs refresh).
+        // Stations that never had a price fetched are "no price yet", not stale.
+        GasStation.countDocuments({ lastPriceUpdate: { $ne: null, $lt: sevenDaysAgo } }),
       ]);
 
       res.json({
@@ -553,7 +553,7 @@ export class AdminPanelController {
         data: {
           stations: stations.map((s) => ({
             ...s.toObject(),
-            isStale: !s.lastPriceUpdate || s.lastPriceUpdate < sevenDaysAgo,
+            isStale: !!s.lastPriceUpdate && s.lastPriceUpdate < sevenDaysAgo,
           })),
           summary: { activeCount, staleCount },
           pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },

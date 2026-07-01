@@ -710,6 +710,11 @@ export class GasPriceController {
             );
             source = 'google';
             fetchedAt = new Date();
+            // Reflect the fresh price on the station doc so the admin panel's
+            // "Last Price Update" shows real data (prices live in a separate cache).
+            if (stationId && /^[a-f\d]{24}$/i.test(stationId)) {
+              GasStation.updateOne({ _id: stationId }, { $set: { lastPriceUpdate: new Date() } }).catch(() => {});
+            }
           } else if (haveCache) {
             serveStale(); // Google had no price — keep old
           } else {
