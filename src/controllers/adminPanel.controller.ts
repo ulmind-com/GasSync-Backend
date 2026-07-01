@@ -489,6 +489,28 @@ export class AdminPanelController {
     }
   };
 
+  /**
+   * Delete a single GasPrice report (used by the Moderation outlier queue).
+   * Kept separate from community-post deletion, which now targets bills.
+   */
+  static deletePrice = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const price = await GasPrice.findByIdAndDelete(id);
+
+      if (!price) {
+        res.status(404).json({ success: false, message: 'Price report not found' });
+        return;
+      }
+
+      await audit(req, 'price.delete', 'GasPrice', id, { fuelType: price.fuelType, price: price.price });
+      res.json({ success: true, message: 'Price report deleted successfully' });
+    } catch (error) {
+      logger.error('Error in AdminPanelController.deletePrice:', error);
+      res.status(500).json({ success: false, message: 'Failed to delete price report' });
+    }
+  };
+
   // ==========================================================
   // 5. STATIONS
   // ==========================================================

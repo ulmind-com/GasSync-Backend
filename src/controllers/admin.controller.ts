@@ -5,6 +5,7 @@
 import { Request, Response } from 'express';
 import User from '../models/User';
 import GasPrice from '../models/GasPrice';
+import Bill from '../models/Bill';
 import Feedback from '../models/Feedback';
 import { Expo, ExpoPushMessage } from 'expo-server-sdk';
 import { logger } from '../utils/logger';
@@ -330,7 +331,12 @@ export class AdminController {
   };
 
   /**
-   * Get paginated community posts
+   * Get paginated community posts.
+   *
+   * A "community post" = a bill the user uploaded (the Bill collection).
+   * Each verified bill may also spawn a derived GasPrice (source 'user_bill')
+   * used for price display, but the post itself lives in Bill — so this lists
+   * bills and delete removes the actual bill (see deleteCommunityPost).
    */
   static getCommunityPosts = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -338,18 +344,32 @@ export class AdminController {
       const limit = parseInt(req.query.limit as string) || 20;
       const skip = (page - 1) * limit;
 
-      const communitySources = ['user_report', 'user_bill'];
-      const query = { source: { $in: communitySources as any[] } };
-
-      const [posts, total] = await Promise.all([
-        GasPrice.find(query)
+      const [bills, total] = await Promise.all([
+        Bill.find()
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(limit)
-          .populate('reportedBy', 'displayName email')
+          .populate('user', 'displayName email')
           .populate('station', 'name address city state'),
-        GasPrice.countDocuments(query),
+        Bill.countDocuments(),
       ]);
+
+      // Map bills to the shape the admin Community Posts page renders.
+      const posts = bills.map((b) => ({
+        _id: b._id,
+        fuelType: b.fuelType,
+        price: b.pricePerGallon,
+        isVerified: b.status === 'verified',
+        status: b.status,
+        stationName: b.stationName,
+        stationAddress: b.stationAddress,
+        googlePlaceId: b.googlePlaceId,
+        location: b.location,
+        imageUrl: b.imageUrl,
+        reportedBy: b.user,
+        station: b.station,
+        createdAt: b.createdAt,
+      }));
 
       res.json({
         success: true,
@@ -370,17 +390,29 @@ export class AdminController {
   };
 
   /**
-   * Delete a community post (gas price report)
+   * Delete a community post (the user-uploaded bill) from the DB, and
+   * best-effort remove the price entry derived from it so nothing lingers.
    */
   static deleteCommunityPost = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
 
-      const post = await GasPrice.findByIdAndDelete(id);
+      const bill = await Bill.findByIdAndDelete(id);
 
-      if (!post) {
+      if (!bill) {
         res.status(404).json({ success: false, message: 'Community post not found' });
         return;
+      }
+
+      // Remove the GasPrice that this bill spawned (loosely linked by
+      // reporter + price + fuel — the bill stored no direct reference).
+      if (bill.pricePerGallon != null && bill.user) {
+        await GasPrice.deleteMany({
+          source: 'user_bill',
+          reportedBy: bill.user,
+          price: bill.pricePerGallon,
+          ...(bill.fuelType ? { fuelType: bill.fuelType } : {}),
+        });
       }
 
       res.json({ success: true, message: 'Community post deleted successfully' });

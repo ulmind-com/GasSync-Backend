@@ -69,6 +69,7 @@ router.get('/engagement', AdminPanelController.getEngagement);
 router.get('/price-analytics', AdminPanelController.getPriceAnalytics);
 router.get('/moderation/outliers', AdminPanelController.getOutliers);
 router.patch('/community-posts/:id/verify', requireWrite, AdminPanelController.verifyCommunityPost);
+router.delete('/prices/:id', requireWrite, AdminPanelController.deletePrice);
 
 // Stations
 router.get('/stations', AdminPanelController.getStations);
