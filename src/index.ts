@@ -128,6 +128,22 @@ app.get('/api-docs.json', (_req, res) => {
 // Health Check
 // ============================================================
 
+// App version gate for force/soft update prompts. Env-driven so you can bump
+// versions in Render (no code deploy) when you publish a new Play Store build:
+//   APP_MIN_VERSION    -> installs below this are forced to update (blocking)
+//   APP_LATEST_VERSION -> installs below this get a dismissible "update" prompt
+app.get('/api/v1/config/app-version', (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      latestVersion: process.env.APP_LATEST_VERSION || '1.0.0',
+      minVersion: process.env.APP_MIN_VERSION || '1.0.0',
+      androidUrl: process.env.APP_ANDROID_URL || 'https://play.google.com/store/apps/details?id=com.gassync.app',
+      iosUrl: process.env.APP_IOS_URL || '',
+    },
+  });
+});
+
 /**
  * @swagger
  * /api/v1/health:
